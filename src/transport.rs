@@ -78,32 +78,52 @@ impl AutohandSdk {
         tokio::spawn(async move {
             let request = inner.request("autohand.prompt", params);
             tokio::pin!(request);
+            let mut request_done = false;
+            let mut stream_done = false;
             loop {
                 tokio::select! {
+                    biased;
                     event = events.recv() => {
                         match event {
                             Ok(event) => {
+                                let terminal = is_terminal_stream_event(&event);
                                 if tx.send(Ok(event)).await.is_err() {
                                     break;
+                                }
+                                if terminal {
+                                    stream_done = true;
+                                    if request_done {
+                                        break;
+                                    }
                                 }
                             }
                             Err(broadcast::error::RecvError::Lagged(_)) => continue,
                             Err(broadcast::error::RecvError::Closed) => {
-                                let _ = tx.send(Err(Error::ChannelClosed)).await;
+                                if !stream_done {
+                                    let _ = tx.send(Err(Error::ChannelClosed)).await;
+                                }
                                 break;
                             }
                         }
                     }
-                    result = &mut request => {
+                    result = &mut request, if !request_done => {
                         if let Err(error) = result {
                             let _ = tx.send(Err(error)).await;
+                            break;
                         }
+                        request_done = true;
                         while let Ok(event) = events.try_recv() {
+                            let terminal = is_terminal_stream_event(&event);
                             if tx.send(Ok(event)).await.is_err() {
                                 break;
                             }
+                            if terminal {
+                                stream_done = true;
+                            }
                         }
-                        break;
+                        if stream_done {
+                            break;
+                        }
                     }
                 }
             }
@@ -154,6 +174,13 @@ impl AutohandSdk {
     fn inner(&self) -> Result<&Arc<TransportInner>> {
         self.inner.as_ref().ok_or(Error::TransportNotStarted)
     }
+}
+
+fn is_terminal_stream_event(event: &SdkEvent) -> bool {
+    matches!(
+        event.event_type.as_str(),
+        "agent_end" | "turn_end" | "message_end" | "error"
+    )
 }
 
 struct TransportInner {
