@@ -26,6 +26,10 @@ Use it when you want to embed Autohand inside a Rust service, developer tool, CL
 - Structured JSON helpers for typed agent output
 - Example parity with the TypeScript SDK examples
 - Typed replayable autoresearch lifecycle, ledger operations, events, and hooks
+- Validated generic slash commands plus deep-research/autoresearch helpers
+- Seven typed persistent-goal RPCs and live command discovery
+- Current session, AGENTS.md, token, skill-source, prompt-file, MCP, agent, and plugin flags
+- Startup feature settings, typed turn usage, and AutohandAI environment support
 
 ## Requirements
 

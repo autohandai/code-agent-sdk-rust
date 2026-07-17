@@ -23,7 +23,8 @@ use crate::{
     AutoresearchPinParams, AutoresearchPinResult, AutoresearchPruneParams, AutoresearchPruneResult,
     AutoresearchReplayParams, AutoresearchReplayResult, AutoresearchRescoreParams,
     AutoresearchRescoreResult, AutoresearchStartParams, AutoresearchStartResult,
-    AutoresearchStatusResult, AutoresearchStopResult, Config, Error, Result, SdkEvent,
+    AutoresearchStatusResult, AutoresearchStopResult, Config, Error, GoalCreateParams,
+    GoalMutationResult, GoalSnapshot, GoalTemplateMetadata, GoalUpdateParams, Result, SdkEvent,
 };
 
 #[derive(Clone)]
@@ -45,6 +46,13 @@ impl AutohandSdk {
             return Ok(());
         }
         self.inner = Some(TransportInner::start(self.config.clone()).await?);
+        if let Some(features) = &self.config.features {
+            self.request(
+                "autohand.applyFlagSettings",
+                json!({"settings":{"features":features}}),
+            )
+            .await?;
+        }
         Ok(())
     }
 
@@ -70,6 +78,66 @@ impl AutohandSdk {
     ) -> Result<Value> {
         self.request("autohand.prompt", options.to_params(message))
             .await
+    }
+
+    pub async fn stream_command(
+        &self,
+        command: &str,
+        args: &[impl AsRef<str>],
+    ) -> Result<tokio::sync::mpsc::Receiver<Result<SdkEvent>>> {
+        let command = crate::format_slash_command(command, args)?;
+        self.stream_prompt(command, PromptOptions::default()).await
+    }
+
+    pub async fn supported_commands(&self) -> Result<Vec<String>> {
+        let value = self
+            .request("autohand.getSupportedCommands", json!({}))
+            .await?;
+        let commands = value
+            .get("commands")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        Ok(commands
+            .into_iter()
+            .filter_map(|v| {
+                v.as_str().map(|s| {
+                    if s.starts_with('/') {
+                        s.to_owned()
+                    } else {
+                        format!("/{s}")
+                    }
+                })
+            })
+            .collect())
+    }
+    pub async fn supports_command(&self, command: &str) -> Result<bool> {
+        let normalized = format!("/{}", command.trim().trim_start_matches('/'));
+        Ok(self.supported_commands().await?.contains(&normalized))
+    }
+
+    pub async fn get_goal(&self) -> Result<GoalSnapshot> {
+        self.request_typed("autohand.goal.get", json!({})).await
+    }
+    pub async fn create_goal(&self, p: GoalCreateParams) -> Result<GoalMutationResult> {
+        self.request_typed("autohand.goal.create", p).await
+    }
+    pub async fn update_goal(&self, p: GoalUpdateParams) -> Result<GoalMutationResult> {
+        self.request_typed("autohand.goal.update", p).await
+    }
+    pub async fn queue_goal(&self, p: GoalCreateParams) -> Result<GoalMutationResult> {
+        self.request_typed("autohand.goal.queue", p).await
+    }
+    pub async fn start_queued_goal(&self) -> Result<GoalMutationResult> {
+        self.request_typed("autohand.goal.startQueued", json!({}))
+            .await
+    }
+    pub async fn list_goal_templates(&self) -> Result<Vec<GoalTemplateMetadata>> {
+        self.request_typed("autohand.goal.listTemplates", json!({}))
+            .await
+    }
+    pub async fn clear_goal(&self) -> Result<GoalMutationResult> {
+        self.request_typed("autohand.goal.clear", json!({})).await
     }
 
     pub async fn stream_prompt(
@@ -302,9 +370,8 @@ impl TransportInner {
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .env("AUTOHAND_STREAM_TOOL_OUTPUT", "1");
-        for (key, value) in &config.env {
+            .stderr(Stdio::piped());
+        for (key, value) in config.cli_env() {
             command.env(key, value);
         }
 

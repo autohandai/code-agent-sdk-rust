@@ -1,5 +1,16 @@
 # Configuration
 
+`Config` mirrors the current CLI RPC launch surface, including bare mode,
+idle-logout control, session persistence/resume/continue/fork, AGENTS.md
+controls, token thresholds, skill sources, display language, prompt files, and
+MCP/agent/plugin paths. `features` is applied through
+`autohand.applyFlagSettings` immediately after startup.
+
+For AutohandAI, use `ProviderName::AutohandAi` with `api_key`, `base_url`, and
+`autohand_ai_plan`, or load `AUTOHAND_AI_API_KEY`, `AUTOHAND_AI_BASE_URL`, and
+`AUTOHAND_AI_PLAN` through `Config::from_env()`. Explicit `Config::env` values
+take precedence.
+
 The Rust SDK keeps configuration close to the Autohand CLI contract. Most fields become CLI flags when the subprocess starts.
 
 ## Basic Configuration

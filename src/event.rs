@@ -1,4 +1,20 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnEndUsage {
+    pub tokens_used: Option<u64>,
+    pub tokens_usage_status: Option<TokenUsageStatus>,
+    pub duration_ms: Option<u64>,
+    pub context_percent: Option<f64>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TokenUsageStatus {
+    Actual,
+    Unavailable,
+}
 
 use crate::{AutoresearchEvent, AutoresearchLifecycleEvent, AutoresearchOperationEvent};
 
@@ -57,6 +73,10 @@ impl SdkEvent {
             serde_json::from_value::<AutoresearchLifecycleEvent>(self.raw.clone())
                 .map(AutoresearchEvent::Lifecycle),
         )
+    }
+
+    pub fn turn_end_usage(&self) -> Option<serde_json::Result<TurnEndUsage>> {
+        (self.event_type == "turn_end").then(|| serde_json::from_value(self.raw.clone()))
     }
 }
 

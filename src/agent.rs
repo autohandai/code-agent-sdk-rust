@@ -8,7 +8,8 @@ use crate::{
     AutoresearchPruneParams, AutoresearchPruneResult, AutoresearchReplayParams,
     AutoresearchReplayResult, AutoresearchRescoreParams, AutoresearchRescoreResult,
     AutoresearchStartParams, AutoresearchStartResult, AutoresearchStatusResult,
-    AutoresearchStopResult, Config, Error, PromptOptions, Result, SdkEvent,
+    AutoresearchStopResult, Config, Error, GoalCreateParams, GoalMutationResult, GoalSnapshot,
+    GoalTemplateMetadata, GoalUpdateParams, PromptOptions, Result, SdkEvent,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -78,8 +79,37 @@ impl Agent {
 
     /// Starts a high-level slash-command run for an autoresearch objective.
     pub async fn autoresearch(&self, objective: impl Into<String>) -> Result<Run> {
-        self.send(format!("/autoresearch {}", objective.into()))
-            .await
+        self.command("/autoresearch", &[objective.into()]).await
+    }
+
+    pub async fn command(&self, command: &str, args: &[impl AsRef<str>]) -> Result<Run> {
+        let command = crate::format_slash_command(command, args)?;
+        self.send(command).await
+    }
+    pub async fn deep_research(&self, objective: impl Into<String>) -> Result<Run> {
+        self.command("/deep-research", &[objective.into()]).await
+    }
+
+    pub async fn get_goal(&self) -> Result<GoalSnapshot> {
+        self.sdk.get_goal().await
+    }
+    pub async fn create_goal(&self, p: GoalCreateParams) -> Result<GoalMutationResult> {
+        self.sdk.create_goal(p).await
+    }
+    pub async fn update_goal(&self, p: GoalUpdateParams) -> Result<GoalMutationResult> {
+        self.sdk.update_goal(p).await
+    }
+    pub async fn queue_goal(&self, p: GoalCreateParams) -> Result<GoalMutationResult> {
+        self.sdk.queue_goal(p).await
+    }
+    pub async fn start_queued_goal(&self) -> Result<GoalMutationResult> {
+        self.sdk.start_queued_goal().await
+    }
+    pub async fn list_goal_templates(&self) -> Result<Vec<GoalTemplateMetadata>> {
+        self.sdk.list_goal_templates().await
+    }
+    pub async fn clear_goal(&self) -> Result<GoalMutationResult> {
+        self.sdk.clear_goal().await
     }
 
     /// Initializes or resumes a persisted autoresearch loop.

@@ -14,6 +14,8 @@ pub enum Error {
     },
     #[error("structured output error: {0}")]
     StructuredOutput(String),
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error("JSON error: {0}")]

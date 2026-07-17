@@ -48,6 +48,9 @@ Important methods:
 - `get_autoresearch_history()` / `replay_autoresearch(params)`
 - `rescore_autoresearch(params)` / `compare_autoresearch(params)`
 - `get_autoresearch_pareto()` / `pin_autoresearch(params)` / `prune_autoresearch(params)`
+- `stream_command(command, args)` / `supported_commands()` / `supports_command(command)`
+- `get_goal()` / `create_goal(params)` / `update_goal(params)` / `queue_goal(params)`
+- `start_queued_goal()` / `list_goal_templates()` / `clear_goal()`
 
 ## `Agent`
 
@@ -72,6 +75,8 @@ Methods:
 - `set_plan_mode(enabled)`
 - `close()`
 - `autoresearch(objective)`
+- `command(command, args)` / `deep_research(objective)`
+- All typed persistent-goal methods exposed by `AutohandSdk`
 - All typed autoresearch lifecycle and ledger methods exposed by `AutohandSdk`
 
 ## `Run`
