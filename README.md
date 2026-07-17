@@ -25,6 +25,7 @@ Use it when you want to embed Autohand inside a Rust service, developer tool, CL
 - Permission response helpers for host-controlled approval flows
 - Structured JSON helpers for typed agent output
 - Example parity with the TypeScript SDK examples
+- Typed replayable autoresearch lifecycle, ledger operations, events, and hooks
 
 ## Requirements
 
@@ -139,6 +140,7 @@ The `examples/` directory mirrors the TypeScript SDK example inventory:
 - `23-system-prompts.rs`
 - `24-high-level-agent.rs`
 - `25-structured-json.rs`
+- `27-autoresearch-ledger.rs`
 - `basic-agent.rs`
 - `basic-usage.rs`
 - `loop-strategies.rs`
@@ -165,6 +167,7 @@ Live examples require an authenticated Autohand CLI and may ask for tool permiss
 - [SDLC Workflows](./docs/sdlc-workflows.md)
 - [Error Handling](./docs/error-handling.md)
 - [Examples](./docs/examples.md)
+- [Replayable Autoresearch](./docs/autoresearch.md)
 - [Contributing](./CONTRIBUTING.md)
 - [Security](./SECURITY.md)
 

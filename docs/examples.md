@@ -26,5 +26,6 @@ Examples:
 - `23-system-prompts.rs`: appended system instructions.
 - `24-high-level-agent.rs`: `Agent` and `Run`.
 - `25-structured-json.rs`: typed JSON output.
+- `27-autoresearch-ledger.rs`: typed persisted experiments, replay, rescoring, Pareto, and pruning.
 
 Live examples require an authenticated Autohand CLI.

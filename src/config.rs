@@ -99,6 +99,10 @@ impl Config {
 
     pub(crate) fn cli_args(&self) -> Vec<String> {
         let mut args = vec!["--mode".to_string(), "rpc".to_string()];
+        if let Some(cwd) = &self.cwd {
+            args.push("--path".to_string());
+            args.push(cwd.display().to_string());
+        }
         push_flag(&mut args, self.unrestricted, "--unrestricted");
         push_flag(&mut args, self.auto_mode, "--auto-mode");
         push_flag(&mut args, self.auto_skill, "--auto-skill");
@@ -187,13 +191,17 @@ mod tests {
         let mut config = Config::default()
             .with_model("fantail2")
             .with_skill("rust")
-            .with_instructions("Prefer small Rust modules.");
+            .with_instructions("Prefer small Rust modules.")
+            .with_cwd("/tmp/autohand-rust-sdk");
         config.unrestricted = true;
         config.context_compact = Some(false);
 
         let args = config.cli_args();
         assert!(args.contains(&"--mode".to_string()));
         assert!(args.contains(&"rpc".to_string()));
+        assert!(args
+            .windows(2)
+            .any(|pair| { pair == ["--path".to_string(), "/tmp/autohand-rust-sdk".to_string()] }));
         assert!(args.contains(&"--unrestricted".to_string()));
         assert!(args.contains(&"--no-context-compact".to_string()));
         assert!(args.contains(&"fantail2".to_string()));

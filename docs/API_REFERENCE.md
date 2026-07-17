@@ -44,6 +44,10 @@ Important methods:
 - `get_state()`
 - `get_messages()`
 - `permission_response(request_id, decision)`
+- `start_autoresearch(params)` / `get_autoresearch_status()` / `stop_autoresearch()`
+- `get_autoresearch_history()` / `replay_autoresearch(params)`
+- `rescore_autoresearch(params)` / `compare_autoresearch(params)`
+- `get_autoresearch_pareto()` / `pin_autoresearch(params)` / `prune_autoresearch(params)`
 
 ## `Agent`
 
@@ -67,6 +71,8 @@ Methods:
 - `deny_permission(request_id)`
 - `set_plan_mode(enabled)`
 - `close()`
+- `autoresearch(objective)`
+- All typed autoresearch lifecycle and ledger methods exposed by `AutohandSdk`
 
 ## `Run`
 
@@ -100,6 +106,22 @@ Event types include:
 - `tool_end`
 - `permission_request`
 - `error`
+- `autoresearch` (decode with `SdkEvent::autoresearch()`)
+
+## Replayable Autoresearch
+
+`AutoresearchStartParams` configures the objective, primary and secondary
+metrics, constraints, adaptive sampling, file scope, subagents, and retention.
+Both `Agent` and `AutohandSdk` expose typed methods for start/status/stop,
+history, replay, rescore, compare, Pareto, pin, and prune.
+
+`AutoresearchRescoreParams::attempt(id)` and
+`AutoresearchRescoreParams::all()` make mutually exclusive selections explicit.
+`SdkEvent::autoresearch()` decodes lifecycle and ledger-operation notifications.
+`AutoresearchHookEvent` provides the canonical CLI hook names.
+
+See [Replayable Autoresearch](./autoresearch.md) for complete examples and
+retention safety guidance.
 
 ## Structured JSON
 

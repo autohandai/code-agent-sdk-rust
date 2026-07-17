@@ -1,5 +1,7 @@
 use serde_json::Value;
 
+use crate::{AutoresearchEvent, AutoresearchLifecycleEvent, AutoresearchOperationEvent};
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SdkEvent {
     pub event_type: String,
@@ -39,9 +41,58 @@ impl SdkEvent {
     pub fn description(&self) -> Option<&str> {
         self.raw.get("description").and_then(Value::as_str)
     }
+
+    /// Decodes a typed autoresearch lifecycle or ledger-operation event.
+    pub fn autoresearch(&self) -> Option<serde_json::Result<AutoresearchEvent>> {
+        if self.event_type != "autoresearch" {
+            return None;
+        }
+        if self.raw.get("operation").is_some() {
+            return Some(
+                serde_json::from_value::<AutoresearchOperationEvent>(self.raw.clone())
+                    .map(AutoresearchEvent::Operation),
+            );
+        }
+        Some(
+            serde_json::from_value::<AutoresearchLifecycleEvent>(self.raw.clone())
+                .map(AutoresearchEvent::Lifecycle),
+        )
+    }
 }
 
-pub(crate) fn event_from_notification(method: &str, params: Value) -> SdkEvent {
+pub(crate) fn event_from_notification(method: &str, mut params: Value) -> SdkEvent {
+    if let Some(object) = params.as_object_mut() {
+        match method {
+            "autohand.autoresearch.start" => {
+                object.insert(
+                    "type".to_string(),
+                    Value::String("autoresearch".to_string()),
+                );
+                object.insert("phase".to_string(), Value::String("start".to_string()));
+            }
+            "autohand.autoresearch.status" => {
+                object.insert(
+                    "type".to_string(),
+                    Value::String("autoresearch".to_string()),
+                );
+                object.insert("phase".to_string(), Value::String("status".to_string()));
+            }
+            "autohand.autoresearch.pause" => {
+                object.insert(
+                    "type".to_string(),
+                    Value::String("autoresearch".to_string()),
+                );
+                object.insert("phase".to_string(), Value::String("pause".to_string()));
+            }
+            "autohand.autoresearch.event" => {
+                object.insert(
+                    "type".to_string(),
+                    Value::String("autoresearch".to_string()),
+                );
+            }
+            _ => {}
+        }
+    }
     let event_type = params
         .get("type")
         .and_then(Value::as_str)
@@ -63,8 +114,74 @@ fn method_to_type(method: &str) -> String {
         "autohand.toolUpdate" => "tool_update",
         "autohand.toolEnd" => "tool_end",
         "autohand.permissionRequest" => "permission_request",
+        "autohand.autoresearch.start"
+        | "autohand.autoresearch.status"
+        | "autohand.autoresearch.pause"
+        | "autohand.autoresearch.event" => "autoresearch",
         "autohand.error" => "error",
         _ => method.strip_prefix("autohand.").unwrap_or(method),
     }
     .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::{AutoresearchLifecyclePhase, AutoresearchOperation, AutoresearchOperationPhase};
+
+    #[test]
+    fn maps_autoresearch_lifecycle_notification() {
+        let event = event_from_notification(
+            "autohand.autoresearch.status",
+            json!({
+                "active": true,
+                "goal": "Reduce latency",
+                "iteration": 2,
+                "maxIterations": 8,
+                "runsLogged": 3,
+                "statusText": "Auto-research active",
+                "subcommand": "status",
+                "timestamp": "2026-07-17T00:00:00Z"
+            }),
+        );
+        assert_eq!(event.event_type, "autoresearch");
+        let decoded = event
+            .autoresearch()
+            .expect("autoresearch event")
+            .expect("valid lifecycle event");
+        match decoded {
+            AutoresearchEvent::Lifecycle(lifecycle) => {
+                assert_eq!(lifecycle.phase, AutoresearchLifecyclePhase::Status);
+                assert_eq!(lifecycle.runs_logged, 3);
+            }
+            AutoresearchEvent::Operation(_) => panic!("expected lifecycle event"),
+        }
+    }
+
+    #[test]
+    fn maps_autoresearch_operation_notification() {
+        let event = event_from_notification(
+            "autohand.autoresearch.event",
+            json!({
+                "operation": "replay",
+                "phase": "completed",
+                "attemptId": "attempt-1",
+                "success": true,
+                "timestamp": "2026-07-17T00:00:01Z"
+            }),
+        );
+        let decoded = event
+            .autoresearch()
+            .expect("autoresearch event")
+            .expect("valid operation event");
+        match decoded {
+            AutoresearchEvent::Operation(operation) => {
+                assert_eq!(operation.operation, AutoresearchOperation::Replay);
+                assert_eq!(operation.phase, AutoresearchOperationPhase::Completed);
+            }
+            AutoresearchEvent::Lifecycle(_) => panic!("expected operation event"),
+        }
+    }
 }

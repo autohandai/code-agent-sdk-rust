@@ -5,8 +5,10 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc,
     },
+    time::Duration,
 };
 
+use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -16,7 +18,12 @@ use tokio::{
 };
 
 use crate::{
-    config::PromptOptions, event::event_from_notification, Config, Error, Result, SdkEvent,
+    config::PromptOptions, event::event_from_notification, AutoresearchCompareParams,
+    AutoresearchCompareResult, AutoresearchHistoryResult, AutoresearchParetoResult,
+    AutoresearchPinParams, AutoresearchPinResult, AutoresearchPruneParams, AutoresearchPruneResult,
+    AutoresearchReplayParams, AutoresearchReplayResult, AutoresearchRescoreParams,
+    AutoresearchRescoreResult, AutoresearchStartParams, AutoresearchStartResult,
+    AutoresearchStatusResult, AutoresearchStopResult, Config, Error, Result, SdkEvent,
 };
 
 #[derive(Clone)]
@@ -159,6 +166,84 @@ impl AutohandSdk {
         self.request("autohand.getMessages", json!({})).await
     }
 
+    /// Initializes or resumes a persisted autoresearch loop.
+    pub async fn start_autoresearch(
+        &self,
+        params: AutoresearchStartParams,
+    ) -> Result<AutoresearchStartResult> {
+        self.request_typed("autohand.autoresearch.start", params)
+            .await
+    }
+
+    /// Returns current persisted autoresearch state.
+    pub async fn get_autoresearch_status(&self) -> Result<AutoresearchStatusResult> {
+        self.request_typed("autohand.autoresearch.status", json!({}))
+            .await
+    }
+
+    /// Pauses autoresearch without deleting persisted state.
+    pub async fn stop_autoresearch(&self) -> Result<AutoresearchStopResult> {
+        self.request_typed("autohand.autoresearch.stop", json!({}))
+            .await
+    }
+
+    /// Lists persisted autoresearch attempts.
+    pub async fn get_autoresearch_history(&self) -> Result<AutoresearchHistoryResult> {
+        self.request_typed("autohand.autoresearch.history", json!({}))
+            .await
+    }
+
+    /// Re-evaluates a candidate in an isolated worktree.
+    pub async fn replay_autoresearch(
+        &self,
+        params: AutoresearchReplayParams,
+    ) -> Result<AutoresearchReplayResult> {
+        self.request_typed("autohand.autoresearch.replay", params)
+            .await
+    }
+
+    /// Reapplies current decision policy to persisted measurements.
+    pub async fn rescore_autoresearch(
+        &self,
+        params: AutoresearchRescoreParams,
+    ) -> Result<AutoresearchRescoreResult> {
+        self.request_typed("autohand.autoresearch.rescore", params)
+            .await
+    }
+
+    /// Compares persisted evidence for two attempts.
+    pub async fn compare_autoresearch(
+        &self,
+        params: AutoresearchCompareParams,
+    ) -> Result<AutoresearchCompareResult> {
+        self.request_typed("autohand.autoresearch.compare", params)
+            .await
+    }
+
+    /// Returns the current constraint-passing Pareto frontier.
+    pub async fn get_autoresearch_pareto(&self) -> Result<AutoresearchParetoResult> {
+        self.request_typed("autohand.autoresearch.pareto", json!({}))
+            .await
+    }
+
+    /// Pins or unpins a candidate's replay artifacts.
+    pub async fn pin_autoresearch(
+        &self,
+        params: AutoresearchPinParams,
+    ) -> Result<AutoresearchPinResult> {
+        self.request_typed("autohand.autoresearch.pin", params)
+            .await
+    }
+
+    /// Previews or applies artifact retention.
+    pub async fn prune_autoresearch(
+        &self,
+        params: AutoresearchPruneParams,
+    ) -> Result<AutoresearchPruneResult> {
+        self.request_typed("autohand.autoresearch.prune", params)
+            .await
+    }
+
     pub async fn permission_response(
         &self,
         request_id: impl Into<String>,
@@ -174,6 +259,16 @@ impl AutohandSdk {
     fn inner(&self) -> Result<&Arc<TransportInner>> {
         self.inner.as_ref().ok_or(Error::TransportNotStarted)
     }
+
+    async fn request_typed<P, R>(&self, method: &str, params: P) -> Result<R>
+    where
+        P: Serialize,
+        R: DeserializeOwned,
+    {
+        let params = serde_json::to_value(params)?;
+        let result = self.request(method, params).await?;
+        Ok(serde_json::from_value(result)?)
+    }
 }
 
 fn is_terminal_stream_event(event: &SdkEvent) -> bool {
@@ -186,7 +281,7 @@ fn is_terminal_stream_event(event: &SdkEvent) -> bool {
 struct TransportInner {
     config: Config,
     child: Mutex<Child>,
-    stdin: Mutex<ChildStdin>,
+    stdin: Mutex<Option<ChildStdin>>,
     pending: Mutex<HashMap<u64, oneshot::Sender<Result<Value>>>>,
     next_id: AtomicU64,
     events: broadcast::Sender<SdkEvent>,
@@ -231,7 +326,7 @@ impl TransportInner {
         let inner = Arc::new(Self {
             config,
             child: Mutex::new(child),
-            stdin: Mutex::new(stdin),
+            stdin: Mutex::new(Some(stdin)),
             pending: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(1),
             events,
@@ -244,9 +339,23 @@ impl TransportInner {
     }
 
     async fn stop(&self) -> Result<()> {
+        {
+            let mut stdin = self.stdin.lock().await;
+            if let Some(mut pipe) = stdin.take() {
+                let _ = pipe.shutdown().await;
+            }
+        }
+
         let mut child = self.child.lock().await;
         if child.id().is_some() {
-            let _ = child.kill().await;
+            match time::timeout(Duration::from_secs(5), child.wait()).await {
+                Ok(Ok(_status)) => {}
+                Ok(Err(error)) => return Err(Error::Io(error)),
+                Err(_) => {
+                    let _ = child.kill().await;
+                    let _ = child.wait().await;
+                }
+            }
         }
         Ok(())
     }
@@ -265,6 +374,7 @@ impl TransportInner {
 
         {
             let mut stdin = self.stdin.lock().await;
+            let stdin = stdin.as_mut().ok_or(Error::ChannelClosed)?;
             stdin.write_all(line.as_bytes()).await?;
             stdin.write_all(b"\n").await?;
             stdin.flush().await?;
