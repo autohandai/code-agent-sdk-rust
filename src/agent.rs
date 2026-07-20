@@ -8,10 +8,11 @@ use crate::{
     AutoresearchPruneParams, AutoresearchPruneResult, AutoresearchReplayParams,
     AutoresearchReplayResult, AutoresearchRescoreParams, AutoresearchRescoreResult,
     AutoresearchStartParams, AutoresearchStartResult, AutoresearchStatusResult,
-    AutoresearchStopResult, Config, Error, GetSkillsRegistryParams, GetSkillsRegistryResult,
-    GoalCreateParams, GoalMutationResult, GoalSnapshot, GoalTemplateMetadata, GoalUpdateParams,
-    InstallSkillParams, InstallSkillResult, McpGetServerConfigsResult, McpListServersResult,
-    McpListToolsParams, McpListToolsResult, PromptOptions, ResetResult, Result, SdkEvent,
+    AutoresearchStopResult, BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config, Error,
+    GetSkillsRegistryParams, GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult,
+    GoalSnapshot, GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
+    McpGetServerConfigsResult, McpListServersResult, McpListToolsParams, McpListToolsResult,
+    PromptOptions, ResetResult, Result, SdkEvent,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -82,6 +83,14 @@ impl Agent {
     /// Replaces the active conversation and returns the new session identifier.
     pub async fn reset(&self) -> Result<ResetResult> {
         self.sdk.reset().await
+    }
+
+    /// Creates a browser continuation token for the active CLI session.
+    pub async fn create_browser_handoff(
+        &self,
+        params: BrowserHandoffCreateParams,
+    ) -> Result<BrowserHandoffCreateResult> {
+        self.sdk.create_browser_handoff(params).await
     }
 
     /// Starts a high-level slash-command run for an autoresearch objective.

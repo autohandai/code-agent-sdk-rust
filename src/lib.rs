@@ -1,5 +1,6 @@
 mod agent;
 mod autoresearch;
+mod browser_handoff;
 mod command;
 mod config;
 mod conversation;
@@ -12,6 +13,7 @@ mod transport;
 
 pub use agent::{Agent, JsonRunOptions, Run, RunResult};
 pub use autoresearch::*;
+pub use browser_handoff::*;
 pub use command::format_slash_command;
 pub use config::{Config, FeatureFlagSettings, PromptOptions, ProviderName};
 pub use conversation::*;

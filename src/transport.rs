@@ -23,11 +23,11 @@ use crate::{
     AutoresearchPinParams, AutoresearchPinResult, AutoresearchPruneParams, AutoresearchPruneResult,
     AutoresearchReplayParams, AutoresearchReplayResult, AutoresearchRescoreParams,
     AutoresearchRescoreResult, AutoresearchStartParams, AutoresearchStartResult,
-    AutoresearchStatusResult, AutoresearchStopResult, Config, Error, GetSkillsRegistryParams,
-    GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult, GoalSnapshot,
-    GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
-    McpGetServerConfigsResult, McpListServersResult, McpListToolsParams, McpListToolsResult,
-    ResetResult, Result, SdkEvent,
+    AutoresearchStatusResult, AutoresearchStopResult, BrowserHandoffCreateParams,
+    BrowserHandoffCreateResult, Config, Error, GetSkillsRegistryParams, GetSkillsRegistryResult,
+    GoalCreateParams, GoalMutationResult, GoalSnapshot, GoalTemplateMetadata, GoalUpdateParams,
+    InstallSkillParams, InstallSkillResult, McpGetServerConfigsResult, McpListServersResult,
+    McpListToolsParams, McpListToolsResult, ResetResult, Result, SdkEvent,
 };
 
 #[derive(Clone)]
@@ -276,6 +276,15 @@ impl AutohandSdk {
 
     pub async fn get_messages(&self) -> Result<Value> {
         self.request("autohand.getMessages", json!({})).await
+    }
+
+    /// Creates a browser continuation token for the active CLI session.
+    pub async fn create_browser_handoff(
+        &self,
+        params: BrowserHandoffCreateParams,
+    ) -> Result<BrowserHandoffCreateResult> {
+        self.request_typed("autohand.browserHandoff.create", params)
+            .await
     }
 
     pub async fn get_skills_registry(

@@ -2,7 +2,7 @@
 
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
 
-use autohand_sdk::{Agent, AutohandSdk, Config};
+use autohand_sdk::{Agent, AutohandSdk, BrowserHandoffCreateParams, Config};
 use serde_json::Value;
 use tempfile::{tempdir, TempDir};
 
@@ -59,4 +59,38 @@ async fn reset_uses_empty_params_and_decodes_the_new_session() {
     let request = sole_control_request(&log);
     assert_eq!(request["method"], "autohand.reset");
     assert_eq!(request["params"], serde_json::json!({}));
+}
+
+#[tokio::test]
+async fn browser_handoff_create_preserves_camel_case_and_decodes_all_fields() {
+    let (_dir, log, sdk) = fixture(
+        r#"{"token":"handoff-token","sessionId":"session-1","workspaceRoot":"/workspace","createdAt":"2026-07-20T01:00:00Z","expiresAt":"2026-07-20T01:05:00Z","url":"chrome-extension://ext/continue"}"#,
+    )
+    .await;
+    let mut agent = Agent::from_sdk(sdk);
+
+    let result = agent
+        .create_browser_handoff(BrowserHandoffCreateParams {
+            extension_id: Some("ext-id".into()),
+            install_url: Some("https://example.test/install".into()),
+        })
+        .await
+        .unwrap();
+    assert_eq!(result.token, "handoff-token");
+    assert_eq!(result.session_id, "session-1");
+    assert_eq!(result.workspace_root, "/workspace");
+    assert_eq!(result.created_at, "2026-07-20T01:00:00Z");
+    assert_eq!(result.expires_at, "2026-07-20T01:05:00Z");
+    assert_eq!(result.url, "chrome-extension://ext/continue");
+    agent.close().await.unwrap();
+
+    let request = sole_control_request(&log);
+    assert_eq!(request["method"], "autohand.browserHandoff.create");
+    assert_eq!(
+        request["params"],
+        serde_json::json!({
+            "extensionId": "ext-id",
+            "installUrl": "https://example.test/install"
+        })
+    );
 }
