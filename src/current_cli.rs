@@ -617,3 +617,13 @@ pub struct HookPostResponseEvent {
     pub duration: f64,
     pub timestamp: String,
 }
+
+/// Request for the SDK client to execute a VS Code MCP tool.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpInvocationRequestEvent {
+    pub request_id: String,
+    pub tool_name: String,
+    pub args: serde_json::Map<String, Value>,
+    pub timestamp: String,
+}

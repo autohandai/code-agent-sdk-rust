@@ -662,3 +662,29 @@ async fn streams_typed_post_response_hook_from_spawned_cli() {
     );
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }
+
+#[tokio::test]
+async fn streams_typed_mcp_invocation_request_from_spawned_cli() {
+    let notification = r#"{"jsonrpc":"2.0","method":"autohand.mcp.invokeRequest","params":{"requestId":"invoke-7","toolName":"vscode__github__issues","args":{"state":"open"},"timestamp":"now"}}"#;
+    let mut fixture = CurrentCliFixture::start(r#"{"success":true}"#, notification).await;
+    let mut events = fixture
+        .sdk
+        .stream_prompt("emit", Default::default())
+        .await
+        .expect("start event stream");
+    let event = events
+        .recv()
+        .await
+        .expect("MCP invocation event")
+        .expect("valid SDK event");
+    let typed = event
+        .mcp_invocation_request()
+        .expect("MCP invocation request kind")
+        .expect("valid MCP invocation request");
+    assert_eq!(typed.request_id, "invoke-7");
+    assert_eq!(
+        typed.args.get("state").and_then(serde_json::Value::as_str),
+        Some("open")
+    );
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}
