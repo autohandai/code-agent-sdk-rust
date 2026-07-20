@@ -541,3 +541,25 @@ async fn streams_typed_automode_completion_from_spawned_cli() {
     assert_eq!(typed.files_modified, 5);
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }
+
+#[tokio::test]
+async fn streams_typed_automode_error_from_spawned_cli() {
+    let notification = r#"{"jsonrpc":"2.0","method":"autohand.automode.error","params":{"sessionId":"auto-1","error":"iteration failed","timestamp":"now"}}"#;
+    let mut fixture = CurrentCliFixture::start(r#"{"success":true}"#, notification).await;
+    let mut events = fixture
+        .sdk
+        .stream_prompt("emit", Default::default())
+        .await
+        .expect("start event stream");
+    let event = events
+        .recv()
+        .await
+        .expect("error event")
+        .expect("valid SDK event");
+    let typed = event
+        .automode_error()
+        .expect("auto-mode error kind")
+        .expect("valid auto-mode error");
+    assert_eq!(typed.error, "iteration failed");
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}

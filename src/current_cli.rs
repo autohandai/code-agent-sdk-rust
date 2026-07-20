@@ -564,3 +564,12 @@ pub struct AutomodeCompleteEvent {
     pub files_modified: u64,
     pub timestamp: String,
 }
+
+/// Terminal auto-mode failure notification.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomodeErrorEvent {
+    pub session_id: String,
+    pub error: String,
+    pub timestamp: String,
+}

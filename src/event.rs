@@ -88,6 +88,10 @@ impl SdkEvent {
     pub fn automode_complete(&self) -> Option<serde_json::Result<crate::AutomodeCompleteEvent>> {
         (self.event_type == "automode_complete").then(|| serde_json::from_value(self.raw.clone()))
     }
+
+    pub fn automode_error(&self) -> Option<serde_json::Result<crate::AutomodeErrorEvent>> {
+        (self.event_type == "automode_error").then(|| serde_json::from_value(self.raw.clone()))
+    }
 }
 
 pub(crate) fn event_from_notification(method: &str, mut params: Value) -> SdkEvent {
@@ -146,6 +150,7 @@ fn method_to_type(method: &str) -> String {
         "autohand.permissionRequest" => "permission_request",
         "autohand.automode.iteration" => "automode_iteration",
         "autohand.automode.complete" => "automode_complete",
+        "autohand.automode.error" => "automode_error",
         "autohand.autoresearch.start"
         | "autohand.autoresearch.status"
         | "autohand.autoresearch.pause"
