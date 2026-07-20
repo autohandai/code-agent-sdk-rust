@@ -563,3 +563,29 @@ async fn streams_typed_automode_error_from_spawned_cli() {
     assert_eq!(typed.error, "iteration failed");
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }
+
+#[tokio::test]
+async fn streams_typed_pre_tool_hook_from_spawned_cli() {
+    let notification = r#"{"jsonrpc":"2.0","method":"autohand.hook.preTool","params":{"toolId":"tool-1","toolName":"read_file","args":{"path":"README.md"},"timestamp":"now"}}"#;
+    let mut fixture = CurrentCliFixture::start(r#"{"success":true}"#, notification).await;
+    let mut events = fixture
+        .sdk
+        .stream_prompt("emit", Default::default())
+        .await
+        .expect("start event stream");
+    let event = events
+        .recv()
+        .await
+        .expect("pre-tool event")
+        .expect("valid SDK event");
+    let typed = event
+        .hook_pre_tool()
+        .expect("pre-tool hook kind")
+        .expect("valid pre-tool hook");
+    assert_eq!(typed.tool_name, "read_file");
+    assert_eq!(
+        typed.args.get("path").and_then(serde_json::Value::as_str),
+        Some("README.md")
+    );
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}

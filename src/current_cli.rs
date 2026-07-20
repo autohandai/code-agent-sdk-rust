@@ -573,3 +573,13 @@ pub struct AutomodeErrorEvent {
     pub error: String,
     pub timestamp: String,
 }
+
+/// Hook notification emitted immediately before a tool begins.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookPreToolEvent {
+    pub tool_id: String,
+    pub tool_name: String,
+    pub args: serde_json::Map<String, Value>,
+    pub timestamp: String,
+}
