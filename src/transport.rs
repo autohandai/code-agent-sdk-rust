@@ -535,6 +535,14 @@ impl AutohandSdk {
         self.request_typed("autohand.changesDecision", params).await
     }
 
+    /// Returns a page of stored CLI sessions.
+    pub async fn get_history(
+        &self,
+        params: crate::GetHistoryParams,
+    ) -> Result<crate::GetHistoryResult> {
+        self.request_typed("autohand.getHistory", params).await
+    }
+
     fn inner(&self) -> Result<Arc<TransportInner>> {
         self.lifecycle
             .inner

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::num::NonZeroU64;
 
 /// Result returned after acknowledging receipt of a permission request.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -83,4 +84,46 @@ pub struct ChangesDecisionResult {
     pub skipped_count: u64,
     #[serde(default)]
     pub errors: Vec<ChangesDecisionError>,
+}
+
+/// Pagination controls for stored session history.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GetHistoryParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page: Option<NonZeroU64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_size: Option<NonZeroU64>,
+}
+
+/// Stored session state.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionHistoryStatus {
+    Active,
+    Completed,
+    Crashed,
+}
+
+/// Summary of one stored CLI session.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionHistoryEntry {
+    pub session_id: String,
+    pub created_at: String,
+    pub last_active_at: String,
+    pub project_name: String,
+    pub model: String,
+    pub message_count: u64,
+    pub status: SessionHistoryStatus,
+}
+
+/// One page of stored CLI sessions.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GetHistoryResult {
+    pub sessions: Vec<SessionHistoryEntry>,
+    pub current_page: u64,
+    pub total_pages: u64,
+    pub total_items: u64,
 }

@@ -1,7 +1,9 @@
 #![cfg(unix)]
 
-use autohand_sdk::{AutohandSdk, ChangesDecisionParams, Config, Error};
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
+use autohand_sdk::{
+    AutohandSdk, ChangesDecisionParams, Config, Error, GetHistoryParams, SessionHistoryStatus,
+};
+use std::{fs, num::NonZeroU64, os::unix::fs::PermissionsExt, path::PathBuf};
 use tempfile::{tempdir, TempDir};
 
 struct CurrentCliFixture {
@@ -170,5 +172,26 @@ async fn decides_multi_file_changes_through_spawned_cli() {
             .await,
         Err(Error::InvalidInput(_))
     ));
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}
+
+#[tokio::test]
+async fn gets_session_history_through_spawned_cli() {
+    let mut fixture = CurrentCliFixture::start(
+        r#"{"sessions":[{"sessionId":"session-1","createdAt":"now","lastActiveAt":"later","projectName":"tin","model":"gpt-5","messageCount":4,"status":"completed"}],"currentPage":2,"totalPages":3,"totalItems":5}"#,
+        "",
+    )
+    .await;
+    let result = fixture
+        .sdk
+        .get_history(GetHistoryParams {
+            page: NonZeroU64::new(2),
+            page_size: NonZeroU64::new(1),
+        })
+        .await
+        .expect("get session history");
+    assert_eq!(result.total_items, 5);
+    assert_eq!(result.sessions[0].status, SessionHistoryStatus::Completed);
+    fixture.assert_request("autohand.getHistory", &[r#""page":2"#, r#""pageSize":1"#]);
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }
