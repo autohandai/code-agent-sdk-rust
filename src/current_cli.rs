@@ -605,3 +605,15 @@ pub struct HookPrePromptEvent {
     pub mentioned_files: Vec<String>,
     pub timestamp: String,
 }
+
+/// Hook notification emitted after a model response is received.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookPostResponseEvent {
+    pub tokens_used: u64,
+    #[serde(default)]
+    pub tokens_usage_status: Option<crate::TokenUsageStatus>,
+    pub tool_calls_count: u64,
+    pub duration: f64,
+    pub timestamp: String,
+}

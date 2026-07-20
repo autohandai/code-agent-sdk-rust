@@ -4,8 +4,8 @@ use autohand_sdk::{
     AutohandSdk, ChangesDecisionParams, Config, Error, GetHistoryParams, LearnGenerateParams,
     LearnRecommendParams, LearningAuditStatus, LearningUpdateStatus, McpInputSchema,
     McpInputSchemaType, McpInvocationResponseParams, McpSetVsCodeToolsParams, McpVsCodeTool,
-    SessionHistoryStatus, SessionLookupResult, SkillGenerationScope, ToolRegistrySource,
-    YoloSetParams,
+    SessionHistoryStatus, SessionLookupResult, SkillGenerationScope, TokenUsageStatus,
+    ToolRegistrySource, YoloSetParams,
 };
 use std::{fs, num::NonZeroU64, os::unix::fs::PermissionsExt, path::PathBuf};
 use tempfile::{tempdir, TempDir};
@@ -634,5 +634,31 @@ async fn streams_typed_pre_prompt_hook_from_spawned_cli() {
         .expect("valid pre-prompt hook");
     assert_eq!(typed.instruction, "Review the SDK");
     assert_eq!(typed.mentioned_files.len(), 2);
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}
+
+#[tokio::test]
+async fn streams_typed_post_response_hook_from_spawned_cli() {
+    let notification = r#"{"jsonrpc":"2.0","method":"autohand.hook.postResponse","params":{"tokensUsed":0,"tokensUsageStatus":"unavailable","toolCallsCount":2,"duration":18.75,"timestamp":"now"}}"#;
+    let mut fixture = CurrentCliFixture::start(r#"{"success":true}"#, notification).await;
+    let mut events = fixture
+        .sdk
+        .stream_prompt("emit", Default::default())
+        .await
+        .expect("start event stream");
+    let event = events
+        .recv()
+        .await
+        .expect("post-response event")
+        .expect("valid SDK event");
+    let typed = event
+        .hook_post_response()
+        .expect("post-response hook kind")
+        .expect("valid post-response hook");
+    assert_eq!(typed.tool_calls_count, 2);
+    assert_eq!(
+        typed.tokens_usage_status,
+        Some(TokenUsageStatus::Unavailable)
+    );
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }
