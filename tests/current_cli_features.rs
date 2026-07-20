@@ -613,3 +613,26 @@ async fn streams_typed_post_tool_hook_from_spawned_cli() {
     assert_eq!(typed.output.as_deref(), Some("contents"));
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }
+
+#[tokio::test]
+async fn streams_typed_pre_prompt_hook_from_spawned_cli() {
+    let notification = r#"{"jsonrpc":"2.0","method":"autohand.hook.prePrompt","params":{"instruction":"Review the SDK","mentionedFiles":["sdk.rs","event.rs"],"timestamp":"now"}}"#;
+    let mut fixture = CurrentCliFixture::start(r#"{"success":true}"#, notification).await;
+    let mut events = fixture
+        .sdk
+        .stream_prompt("emit", Default::default())
+        .await
+        .expect("start event stream");
+    let event = events
+        .recv()
+        .await
+        .expect("pre-prompt event")
+        .expect("valid SDK event");
+    let typed = event
+        .hook_pre_prompt()
+        .expect("pre-prompt hook kind")
+        .expect("valid pre-prompt hook");
+    assert_eq!(typed.instruction, "Review the SDK");
+    assert_eq!(typed.mentioned_files.len(), 2);
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}

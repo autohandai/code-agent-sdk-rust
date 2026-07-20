@@ -596,3 +596,12 @@ pub struct HookPostToolEvent {
     pub output: Option<String>,
     pub timestamp: String,
 }
+
+/// Hook notification emitted before a prompt is sent to the model.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookPrePromptEvent {
+    pub instruction: String,
+    pub mentioned_files: Vec<String>,
+    pub timestamp: String,
+}

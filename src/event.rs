@@ -100,6 +100,10 @@ impl SdkEvent {
     pub fn hook_post_tool(&self) -> Option<serde_json::Result<crate::HookPostToolEvent>> {
         (self.event_type == "hook_post_tool").then(|| serde_json::from_value(self.raw.clone()))
     }
+
+    pub fn hook_pre_prompt(&self) -> Option<serde_json::Result<crate::HookPrePromptEvent>> {
+        (self.event_type == "hook_pre_prompt").then(|| serde_json::from_value(self.raw.clone()))
+    }
 }
 
 pub(crate) fn event_from_notification(method: &str, mut params: Value) -> SdkEvent {
@@ -161,6 +165,7 @@ fn method_to_type(method: &str) -> String {
         "autohand.automode.error" => "automode_error",
         "autohand.hook.preTool" => "hook_pre_tool",
         "autohand.hook.postTool" => "hook_post_tool",
+        "autohand.hook.prePrompt" => "hook_pre_prompt",
         "autohand.autoresearch.start"
         | "autohand.autoresearch.status"
         | "autohand.autoresearch.pause"
