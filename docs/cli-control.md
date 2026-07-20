@@ -26,3 +26,8 @@ be selected without supplying a token.
 Call `start_automode(params)` with a required prompt and optional iteration,
 completion, worktree, checkpoint, runtime, and cost limits. A successful result
 contains the accepted auto-mode session ID; execution continues in the CLI.
+
+## Inspect Auto-Mode Status
+
+Call `get_automode_status()` for the live `active` and `paused` flags plus the
+optional persisted state, iteration and file counters, branch, and checkpoint.

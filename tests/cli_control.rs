@@ -3,7 +3,7 @@
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
 
 use autohand_sdk::{
-    Agent, AutohandSdk, AutomodeStartParams, BrowserHandoffAttachParams,
+    Agent, AutohandSdk, AutomodeStartParams, AutomodeStatus, BrowserHandoffAttachParams,
     BrowserHandoffCreateParams, Config,
 };
 use serde_json::Value;
@@ -179,4 +179,31 @@ async fn automode_start_preserves_all_camel_case_options_and_decodes_acceptance(
             "maxCost": 7.5
         })
     );
+}
+
+#[tokio::test]
+async fn automode_status_uses_empty_params_and_decodes_nested_state() {
+    let (_dir, log, sdk) = fixture(
+        r#"{"active":true,"paused":false,"state":{"sessionId":"auto-1","status":"running","currentIteration":4,"maxIterations":12,"filesCreated":2,"filesModified":5,"branch":"autohand/auto-1","lastCheckpoint":{"commit":"abc123","message":"checkpoint","timestamp":"2026-07-20T01:02:00Z"}}}"#,
+    )
+    .await;
+    let mut agent = Agent::from_sdk(sdk);
+
+    let result = agent.get_automode_status().await.unwrap();
+    assert!(result.active);
+    assert!(!result.paused);
+    let state = result.state.unwrap();
+    assert_eq!(state.session_id, "auto-1");
+    assert_eq!(state.status, AutomodeStatus::Running);
+    assert_eq!(state.current_iteration, 4);
+    assert_eq!(state.max_iterations, 12);
+    assert_eq!(state.files_created, 2);
+    assert_eq!(state.files_modified, 5);
+    assert_eq!(state.branch.as_deref(), Some("autohand/auto-1"));
+    assert_eq!(state.last_checkpoint.unwrap().commit, "abc123");
+    agent.close().await.unwrap();
+
+    let request = sole_control_request(&log);
+    assert_eq!(request["method"], "autohand.automode.status");
+    assert_eq!(request["params"], serde_json::json!({}));
 }

@@ -29,3 +29,45 @@ pub struct AutomodeStartResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
+
+/// Persisted auto-mode lifecycle state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AutomodeStatus {
+    Running,
+    Paused,
+    Completed,
+    Cancelled,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutomodeCheckpoint {
+    pub commit: String,
+    pub message: String,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomodeState {
+    pub session_id: String,
+    pub status: AutomodeStatus,
+    pub current_iteration: u32,
+    pub max_iterations: u32,
+    pub files_created: u32,
+    pub files_modified: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_checkpoint: Option<AutomodeCheckpoint>,
+}
+
+/// Runtime flags and optional persisted state for auto-mode.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutomodeStatusResult {
+    pub active: bool,
+    pub paused: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<AutomodeState>,
+}
