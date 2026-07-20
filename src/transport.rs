@@ -524,6 +524,17 @@ impl AutohandSdk {
         .await
     }
 
+    /// Applies or rejects a pending multi-file preview batch.
+    pub async fn decide_changes(
+        &self,
+        params: crate::ChangesDecisionParams,
+    ) -> Result<crate::ChangesDecisionResult> {
+        params
+            .validate()
+            .map_err(|message| Error::InvalidInput(message.into()))?;
+        self.request_typed("autohand.changesDecision", params).await
+    }
+
     fn inner(&self) -> Result<Arc<TransportInner>> {
         self.lifecycle
             .inner

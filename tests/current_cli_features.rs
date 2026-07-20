@@ -1,6 +1,6 @@
 #![cfg(unix)]
 
-use autohand_sdk::{AutohandSdk, Config, Error};
+use autohand_sdk::{AutohandSdk, ChangesDecisionParams, Config, Error};
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
 use tempfile::{tempdir, TempDir};
 
@@ -130,6 +130,44 @@ async fn acknowledges_directory_access_through_spawned_cli() {
     );
     assert!(matches!(
         fixture.sdk.acknowledge_directory_access("\t").await,
+        Err(Error::InvalidInput(_))
+    ));
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}
+
+#[tokio::test]
+async fn decides_multi_file_changes_through_spawned_cli() {
+    let mut fixture = CurrentCliFixture::start(
+        r#"{"success":true,"appliedCount":1,"skippedCount":2,"errors":[]}"#,
+        "",
+    )
+    .await;
+    let result = fixture
+        .sdk
+        .decide_changes(ChangesDecisionParams::AcceptSelected {
+            batch_id: "batch-1".into(),
+            selected_change_ids: vec!["change-2".into()],
+        })
+        .await
+        .expect("decide changes");
+    assert_eq!(result.applied_count, 1);
+    assert_eq!(result.skipped_count, 2);
+    fixture.assert_request(
+        "autohand.changesDecision",
+        &[
+            r#""action":"accept_selected""#,
+            r#""batchId":"batch-1""#,
+            r#""selectedChangeIds":["change-2"]"#,
+        ],
+    );
+    assert!(matches!(
+        fixture
+            .sdk
+            .decide_changes(ChangesDecisionParams::AcceptSelected {
+                batch_id: "batch-1".into(),
+                selected_change_ids: Vec::new(),
+            })
+            .await,
         Err(Error::InvalidInput(_))
     ));
     fixture.sdk.stop().await.expect("stop fixture SDK");
