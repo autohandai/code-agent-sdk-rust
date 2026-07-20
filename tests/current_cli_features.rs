@@ -1,10 +1,10 @@
 #![cfg(unix)]
 
 use autohand_sdk::{
-    AutohandSdk, ChangesDecisionParams, Config, Error, GetHistoryParams, LearnRecommendParams,
-    LearningAuditStatus, LearningUpdateStatus, McpInputSchema, McpInputSchemaType,
-    McpInvocationResponseParams, McpSetVsCodeToolsParams, McpVsCodeTool, SessionHistoryStatus,
-    SessionLookupResult, YoloSetParams,
+    AutohandSdk, ChangesDecisionParams, Config, Error, GetHistoryParams, LearnGenerateParams,
+    LearnRecommendParams, LearningAuditStatus, LearningUpdateStatus, McpInputSchema,
+    McpInputSchemaType, McpInvocationResponseParams, McpSetVsCodeToolsParams, McpVsCodeTool,
+    SessionHistoryStatus, SessionLookupResult, SkillGenerationScope, YoloSetParams,
 };
 use std::{fs, num::NonZeroU64, os::unix::fs::PermissionsExt, path::PathBuf};
 use tempfile::{tempdir, TempDir};
@@ -420,5 +420,24 @@ async fn updates_project_learning_through_spawned_cli() {
     assert_eq!(result.updated, 1);
     assert_eq!(result.results[0].status, LearningUpdateStatus::Updated);
     fixture.assert_request("autohand.learn.update", &[r#""params":{}"#]);
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}
+
+#[tokio::test]
+async fn generates_project_skill_through_spawned_cli() {
+    let mut fixture = CurrentCliFixture::start(
+        r#"{"success":true,"skillName":"release","skillPath":".autohand/skills/release"}"#,
+        "",
+    )
+    .await;
+    let result = fixture
+        .sdk
+        .generate_project_skill(LearnGenerateParams {
+            scope: SkillGenerationScope::Project,
+        })
+        .await
+        .expect("generate project skill");
+    assert_eq!(result.skill_name.as_deref(), Some("release"));
+    fixture.assert_request("autohand.learn.generate", &[r#""scope":"project""#]);
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }

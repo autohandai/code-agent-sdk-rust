@@ -630,6 +630,14 @@ impl AutohandSdk {
         self.request_typed("autohand.learn.update", json!({})).await
     }
 
+    /// Synthesizes and installs a skill from observed project workflows.
+    pub async fn generate_project_skill(
+        &self,
+        params: crate::LearnGenerateParams,
+    ) -> Result<crate::LearnGenerateResult> {
+        self.request_typed("autohand.learn.generate", params).await
+    }
+
     fn inner(&self) -> Result<Arc<TransportInner>> {
         self.lifecycle
             .inner

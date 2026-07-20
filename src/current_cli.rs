@@ -444,3 +444,31 @@ pub struct LearnUpdateResult {
     #[serde(default)]
     pub error: Option<String>,
 }
+
+/// Installation scope for a generated skill.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SkillGenerationScope {
+    Project,
+    User,
+}
+
+/// Settings for project-observation skill generation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LearnGenerateParams {
+    pub scope: SkillGenerationScope,
+}
+
+/// Generated skill details.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LearnGenerateResult {
+    pub success: bool,
+    #[serde(default)]
+    pub skill_name: Option<String>,
+    #[serde(default)]
+    pub skill_path: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
