@@ -18,8 +18,8 @@ use tokio::{
 };
 
 use crate::{
-    config::PromptOptions, event::event_from_notification, AutomodeStartParams,
-    AutomodeStartResult, AutomodeStatusResult, AutoresearchCompareParams,
+    config::PromptOptions, event::event_from_notification, AutomodePauseResult,
+    AutomodeStartParams, AutomodeStartResult, AutomodeStatusResult, AutoresearchCompareParams,
     AutoresearchCompareResult, AutoresearchHistoryResult, AutoresearchParetoResult,
     AutoresearchPinParams, AutoresearchPinResult, AutoresearchPruneParams, AutoresearchPruneResult,
     AutoresearchReplayParams, AutoresearchReplayResult, AutoresearchRescoreParams,
@@ -312,6 +312,12 @@ impl AutohandSdk {
     /// Returns auto-mode runtime flags and the optional persisted session state.
     pub async fn get_automode_status(&self) -> Result<AutomodeStatusResult> {
         self.request_typed("autohand.automode.status", json!({}))
+            .await
+    }
+
+    /// Pauses the active auto-mode session.
+    pub async fn pause_automode(&self) -> Result<AutomodePauseResult> {
+        self.request_typed("autohand.automode.pause", json!({}))
             .await
     }
 

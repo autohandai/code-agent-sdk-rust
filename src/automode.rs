@@ -71,3 +71,11 @@ pub struct AutomodeStatusResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<AutomodeState>,
 }
+
+/// Result of pausing an active auto-mode session.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutomodePauseResult {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}

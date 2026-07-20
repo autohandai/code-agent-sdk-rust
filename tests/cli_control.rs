@@ -207,3 +207,22 @@ async fn automode_status_uses_empty_params_and_decodes_nested_state() {
     assert_eq!(request["method"], "autohand.automode.status");
     assert_eq!(request["params"], serde_json::json!({}));
 }
+
+#[tokio::test]
+async fn automode_pause_uses_empty_params_and_decodes_business_errors() {
+    let (_dir, log, sdk) =
+        fixture(r#"{"success":false,"error":"No auto-mode session is running"}"#).await;
+    let mut agent = Agent::from_sdk(sdk);
+
+    let result = agent.pause_automode().await.unwrap();
+    assert!(!result.success);
+    assert_eq!(
+        result.error.as_deref(),
+        Some("No auto-mode session is running")
+    );
+    agent.close().await.unwrap();
+
+    let request = sole_control_request(&log);
+    assert_eq!(request["method"], "autohand.automode.pause");
+    assert_eq!(request["params"], serde_json::json!({}));
+}

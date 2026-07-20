@@ -53,6 +53,7 @@ Important methods:
 - `attach_latest_browser_handoff()`
 - `start_automode(params)`
 - `get_automode_status()`
+- `pause_automode()`
 - `permission_response(request_id, decision)`
 - `start_autoresearch(params)` / `get_autoresearch_status()` / `stop_autoresearch()`
 - `get_autoresearch_history()` / `replay_autoresearch(params)`
@@ -124,6 +125,7 @@ Methods:
 - `attach_latest_browser_handoff()`
 - `start_automode(params)`
 - `get_automode_status()`
+- `pause_automode()`
 - `close()`
 - `autoresearch(objective)`
 - `command(command, args)` / `deep_research(objective)`

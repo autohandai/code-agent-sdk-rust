@@ -3,16 +3,16 @@ use serde_json::Value;
 
 use crate::{
     json_output::{json_instruction, parse_json_as},
-    AutohandSdk, AutomodeStartParams, AutomodeStartResult, AutomodeStatusResult,
-    AutoresearchCompareParams, AutoresearchCompareResult, AutoresearchHistoryResult,
-    AutoresearchParetoResult, AutoresearchPinParams, AutoresearchPinResult,
-    AutoresearchPruneParams, AutoresearchPruneResult, AutoresearchReplayParams,
-    AutoresearchReplayResult, AutoresearchRescoreParams, AutoresearchRescoreResult,
-    AutoresearchStartParams, AutoresearchStartResult, AutoresearchStatusResult,
-    AutoresearchStopResult, BrowserHandoffAttachParams, BrowserHandoffAttachResult,
-    BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config, Error, GetSkillsRegistryParams,
-    GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult, GoalSnapshot,
-    GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
+    AutohandSdk, AutomodePauseResult, AutomodeStartParams, AutomodeStartResult,
+    AutomodeStatusResult, AutoresearchCompareParams, AutoresearchCompareResult,
+    AutoresearchHistoryResult, AutoresearchParetoResult, AutoresearchPinParams,
+    AutoresearchPinResult, AutoresearchPruneParams, AutoresearchPruneResult,
+    AutoresearchReplayParams, AutoresearchReplayResult, AutoresearchRescoreParams,
+    AutoresearchRescoreResult, AutoresearchStartParams, AutoresearchStartResult,
+    AutoresearchStatusResult, AutoresearchStopResult, BrowserHandoffAttachParams,
+    BrowserHandoffAttachResult, BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config,
+    Error, GetSkillsRegistryParams, GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult,
+    GoalSnapshot, GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
     McpGetServerConfigsResult, McpListServersResult, McpListToolsParams, McpListToolsResult,
     PromptOptions, ResetResult, Result, SdkEvent,
 };
@@ -116,6 +116,11 @@ impl Agent {
     /// Returns auto-mode runtime flags and the optional persisted session state.
     pub async fn get_automode_status(&self) -> Result<AutomodeStatusResult> {
         self.sdk.get_automode_status().await
+    }
+
+    /// Pauses the active auto-mode session.
+    pub async fn pause_automode(&self) -> Result<AutomodePauseResult> {
+        self.sdk.pause_automode().await
     }
 
     /// Starts a high-level slash-command run for an autoresearch objective.

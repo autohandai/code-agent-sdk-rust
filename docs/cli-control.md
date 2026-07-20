@@ -31,3 +31,8 @@ contains the accepted auto-mode session ID; execution continues in the CLI.
 
 Call `get_automode_status()` for the live `active` and `paused` flags plus the
 optional persisted state, iteration and file counters, branch, and checkpoint.
+
+## Pause Auto-Mode
+
+Call `pause_automode()` to pause the active session. CLI business failures are
+returned as `AutomodePauseResult { success: false, error: Some(...) }`.
