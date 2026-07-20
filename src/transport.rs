@@ -556,6 +556,22 @@ impl AutohandSdk {
             .await
     }
 
+    /// Restores a stored session into the active RPC process.
+    pub async fn attach_session(
+        &self,
+        session_id: impl Into<String>,
+    ) -> Result<crate::SessionAttachResult> {
+        let session_id = session_id.into();
+        if session_id.trim().is_empty() {
+            return Err(Error::InvalidInput("session_id is required".into()));
+        }
+        self.request_typed(
+            "autohand.session.attach",
+            json!({ "sessionId": session_id }),
+        )
+        .await
+    }
+
     fn inner(&self) -> Result<Arc<TransportInner>> {
         self.lifecycle
             .inner

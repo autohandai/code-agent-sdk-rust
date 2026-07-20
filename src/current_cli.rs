@@ -212,3 +212,18 @@ impl<'de> Deserialize<'de> for SessionLookupResult {
         Ok(Self::Failure { error })
     }
 }
+
+/// Result returned after restoring a stored session into the active process.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionAttachResult {
+    pub success: bool,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub workspace_root: Option<String>,
+    #[serde(default)]
+    pub message_count: Option<u64>,
+    #[serde(default)]
+    pub error: Option<String>,
+}

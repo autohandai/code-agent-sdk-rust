@@ -238,3 +238,25 @@ async fn gets_typed_session_details_and_failures_through_spawned_cli() {
     ));
     malformed.sdk.stop().await.expect("stop malformed fixture");
 }
+
+#[tokio::test]
+async fn attaches_session_through_spawned_cli() {
+    let mut fixture = CurrentCliFixture::start(
+        r#"{"success":true,"sessionId":"session-2","workspaceRoot":"/workspace","messageCount":6}"#,
+        "",
+    )
+    .await;
+    let result = fixture
+        .sdk
+        .attach_session("session-2")
+        .await
+        .expect("attach session");
+    assert!(result.success);
+    assert_eq!(result.message_count, Some(6));
+    fixture.assert_request("autohand.session.attach", &[r#""sessionId":"session-2""#]);
+    assert!(matches!(
+        fixture.sdk.attach_session(" ").await,
+        Err(Error::InvalidInput(_))
+    ));
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}
