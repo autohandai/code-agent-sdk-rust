@@ -18,17 +18,17 @@ use tokio::{
 };
 
 use crate::{
-    config::PromptOptions, event::event_from_notification, AutomodePauseResult,
-    AutomodeResumeResult, AutomodeStartParams, AutomodeStartResult, AutomodeStatusResult,
-    AutoresearchCompareParams, AutoresearchCompareResult, AutoresearchHistoryResult,
-    AutoresearchParetoResult, AutoresearchPinParams, AutoresearchPinResult,
-    AutoresearchPruneParams, AutoresearchPruneResult, AutoresearchReplayParams,
-    AutoresearchReplayResult, AutoresearchRescoreParams, AutoresearchRescoreResult,
-    AutoresearchStartParams, AutoresearchStartResult, AutoresearchStatusResult,
-    AutoresearchStopResult, BrowserHandoffAttachParams, BrowserHandoffAttachResult,
-    BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config, Error, GetSkillsRegistryParams,
-    GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult, GoalSnapshot,
-    GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
+    config::PromptOptions, event::event_from_notification, AutomodeCancelParams,
+    AutomodeCancelResult, AutomodePauseResult, AutomodeResumeResult, AutomodeStartParams,
+    AutomodeStartResult, AutomodeStatusResult, AutoresearchCompareParams,
+    AutoresearchCompareResult, AutoresearchHistoryResult, AutoresearchParetoResult,
+    AutoresearchPinParams, AutoresearchPinResult, AutoresearchPruneParams, AutoresearchPruneResult,
+    AutoresearchReplayParams, AutoresearchReplayResult, AutoresearchRescoreParams,
+    AutoresearchRescoreResult, AutoresearchStartParams, AutoresearchStartResult,
+    AutoresearchStatusResult, AutoresearchStopResult, BrowserHandoffAttachParams,
+    BrowserHandoffAttachResult, BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config,
+    Error, GetSkillsRegistryParams, GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult,
+    GoalSnapshot, GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
     McpGetServerConfigsResult, McpListServersResult, McpListToolsParams, McpListToolsResult,
     ResetResult, Result, SdkEvent,
 };
@@ -326,6 +326,14 @@ impl AutohandSdk {
     pub async fn resume_automode(&self) -> Result<AutomodeResumeResult> {
         self.request_typed("autohand.automode.resume", json!({}))
             .await
+    }
+
+    /// Cancels the active auto-mode session.
+    pub async fn cancel_automode(
+        &self,
+        params: AutomodeCancelParams,
+    ) -> Result<AutomodeCancelResult> {
+        self.request_typed("autohand.automode.cancel", params).await
     }
 
     pub async fn get_skills_registry(

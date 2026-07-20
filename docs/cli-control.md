@@ -41,3 +41,8 @@ returned as `AutomodePauseResult { success: false, error: Some(...) }`.
 
 Call `resume_automode()` to continue a paused session. The result reports
 business success or an optional CLI error without converting it to transport failure.
+
+## Cancel Auto-Mode
+
+Call `cancel_automode(params)` to stop the active session. `reason` is optional;
+the result reports business success or an optional CLI error.

@@ -3,8 +3,8 @@
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
 
 use autohand_sdk::{
-    Agent, AutohandSdk, AutomodeStartParams, AutomodeStatus, BrowserHandoffAttachParams,
-    BrowserHandoffCreateParams, Config,
+    Agent, AutohandSdk, AutomodeCancelParams, AutomodeStartParams, AutomodeStatus,
+    BrowserHandoffAttachParams, BrowserHandoffCreateParams, Config,
 };
 use serde_json::Value;
 use tempfile::{tempdir, TempDir};
@@ -240,4 +240,27 @@ async fn automode_resume_uses_empty_params_and_decodes_success() {
     let request = sole_control_request(&log);
     assert_eq!(request["method"], "autohand.automode.resume");
     assert_eq!(request["params"], serde_json::json!({}));
+}
+
+#[tokio::test]
+async fn automode_cancel_sends_the_optional_reason_and_decodes_success() {
+    let (_dir, log, sdk) = fixture(r#"{"success":true}"#).await;
+    let mut agent = Agent::from_sdk(sdk);
+
+    let result = agent
+        .cancel_automode(AutomodeCancelParams {
+            reason: Some("operator requested".into()),
+        })
+        .await
+        .unwrap();
+    assert!(result.success);
+    assert_eq!(result.error, None);
+    agent.close().await.unwrap();
+
+    let request = sole_control_request(&log);
+    assert_eq!(request["method"], "autohand.automode.cancel");
+    assert_eq!(
+        request["params"],
+        serde_json::json!({"reason": "operator requested"})
+    );
 }
