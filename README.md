@@ -190,6 +190,7 @@ measurement.
 - [Error Handling](./docs/error-handling.md)
 - [Examples](./docs/examples.md)
 - [Replayable Autoresearch](./docs/autoresearch.md)
+- [Conversation, Browser Handoff, And Auto-Mode Control](./docs/cli-control.md)
 - [Startup Performance](./docs/startup-performance.md)
 - [Contributing](./CONTRIBUTING.md)
 - [Security](./SECURITY.md)

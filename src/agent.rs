@@ -11,7 +11,7 @@ use crate::{
     AutoresearchStopResult, Config, Error, GetSkillsRegistryParams, GetSkillsRegistryResult,
     GoalCreateParams, GoalMutationResult, GoalSnapshot, GoalTemplateMetadata, GoalUpdateParams,
     InstallSkillParams, InstallSkillResult, McpGetServerConfigsResult, McpListServersResult,
-    McpListToolsParams, McpListToolsResult, PromptOptions, Result, SdkEvent,
+    McpListToolsParams, McpListToolsResult, PromptOptions, ResetResult, Result, SdkEvent,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -77,6 +77,11 @@ impl Agent {
 
     pub async fn set_plan_mode(&self, enabled: bool) -> Result<Value> {
         self.sdk.set_plan_mode(enabled).await
+    }
+
+    /// Replaces the active conversation and returns the new session identifier.
+    pub async fn reset(&self) -> Result<ResetResult> {
+        self.sdk.reset().await
     }
 
     /// Starts a high-level slash-command run for an autoresearch objective.

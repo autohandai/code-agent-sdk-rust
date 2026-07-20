@@ -42,7 +42,9 @@ Important methods:
 - `prompt(message, options)`
 - `stream_prompt(message, options)`
 - `interrupt()`
+- `reset()`
 - `set_plan_mode(enabled)`
+- `reset()`
 - `set_permission_mode(mode)`
 - `set_model(model)`
 - `get_state()`

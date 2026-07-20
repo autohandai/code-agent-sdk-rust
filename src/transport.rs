@@ -27,7 +27,7 @@ use crate::{
     GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult, GoalSnapshot,
     GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
     McpGetServerConfigsResult, McpListServersResult, McpListToolsParams, McpListToolsResult,
-    Result, SdkEvent,
+    ResetResult, Result, SdkEvent,
 };
 
 #[derive(Clone)]
@@ -248,6 +248,11 @@ impl AutohandSdk {
 
     pub async fn interrupt(&self) -> Result<Value> {
         self.request("autohand.abort", json!({})).await
+    }
+
+    /// Replaces the active conversation and returns the new session identifier.
+    pub async fn reset(&self) -> Result<ResetResult> {
+        self.request_typed("autohand.reset", json!({})).await
     }
 
     pub async fn set_plan_mode(&self, enabled: bool) -> Result<Value> {
