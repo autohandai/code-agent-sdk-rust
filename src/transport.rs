@@ -19,16 +19,17 @@ use tokio::{
 
 use crate::{
     config::PromptOptions, event::event_from_notification, AutomodeCancelParams,
-    AutomodeCancelResult, AutomodePauseResult, AutomodeResumeResult, AutomodeStartParams,
-    AutomodeStartResult, AutomodeStatusResult, AutoresearchCompareParams,
-    AutoresearchCompareResult, AutoresearchHistoryResult, AutoresearchParetoResult,
-    AutoresearchPinParams, AutoresearchPinResult, AutoresearchPruneParams, AutoresearchPruneResult,
-    AutoresearchReplayParams, AutoresearchReplayResult, AutoresearchRescoreParams,
-    AutoresearchRescoreResult, AutoresearchStartParams, AutoresearchStartResult,
-    AutoresearchStatusResult, AutoresearchStopResult, BrowserHandoffAttachParams,
-    BrowserHandoffAttachResult, BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config,
-    Error, GetSkillsRegistryParams, GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult,
-    GoalSnapshot, GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
+    AutomodeCancelResult, AutomodeGetLogParams, AutomodeGetLogResult, AutomodePauseResult,
+    AutomodeResumeResult, AutomodeStartParams, AutomodeStartResult, AutomodeStatusResult,
+    AutoresearchCompareParams, AutoresearchCompareResult, AutoresearchHistoryResult,
+    AutoresearchParetoResult, AutoresearchPinParams, AutoresearchPinResult,
+    AutoresearchPruneParams, AutoresearchPruneResult, AutoresearchReplayParams,
+    AutoresearchReplayResult, AutoresearchRescoreParams, AutoresearchRescoreResult,
+    AutoresearchStartParams, AutoresearchStartResult, AutoresearchStatusResult,
+    AutoresearchStopResult, BrowserHandoffAttachParams, BrowserHandoffAttachResult,
+    BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config, Error, GetSkillsRegistryParams,
+    GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult, GoalSnapshot,
+    GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
     McpGetServerConfigsResult, McpListServersResult, McpListToolsParams, McpListToolsResult,
     ResetResult, Result, SdkEvent,
 };
@@ -334,6 +335,14 @@ impl AutohandSdk {
         params: AutomodeCancelParams,
     ) -> Result<AutomodeCancelResult> {
         self.request_typed("autohand.automode.cancel", params).await
+    }
+
+    /// Returns auto-mode iteration records, optionally limited by the caller.
+    pub async fn get_automode_log(
+        &self,
+        params: AutomodeGetLogParams,
+    ) -> Result<AutomodeGetLogResult> {
+        self.request_typed("autohand.automode.getLog", params).await
     }
 
     pub async fn get_skills_registry(

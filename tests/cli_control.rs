@@ -3,8 +3,8 @@
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
 
 use autohand_sdk::{
-    Agent, AutohandSdk, AutomodeCancelParams, AutomodeStartParams, AutomodeStatus,
-    BrowserHandoffAttachParams, BrowserHandoffCreateParams, Config,
+    Agent, AutohandSdk, AutomodeCancelParams, AutomodeGetLogParams, AutomodeStartParams,
+    AutomodeStatus, BrowserHandoffAttachParams, BrowserHandoffCreateParams, Config,
 };
 use serde_json::Value;
 use tempfile::{tempdir, TempDir};
@@ -263,4 +263,32 @@ async fn automode_cancel_sends_the_optional_reason_and_decodes_success() {
         request["params"],
         serde_json::json!({"reason": "operator requested"})
     );
+}
+
+#[tokio::test]
+async fn automode_log_sends_limit_and_decodes_iteration_details() {
+    let (_dir, log, sdk) = fixture(
+        r#"{"success":true,"iterations":[{"iteration":4,"timestamp":"2026-07-20T01:03:00Z","actions":["edit","test"],"tokensUsed":1234,"cost":0.42,"checkpoint":{"commit":"def456","message":"iteration 4"}}]}"#,
+    )
+    .await;
+    let mut agent = Agent::from_sdk(sdk);
+
+    let result = agent
+        .get_automode_log(AutomodeGetLogParams { limit: Some(5) })
+        .await
+        .unwrap();
+    assert!(result.success);
+    assert_eq!(result.error, None);
+    let entry = &result.iterations[0];
+    assert_eq!(entry.iteration, 4);
+    assert_eq!(entry.timestamp, "2026-07-20T01:03:00Z");
+    assert_eq!(entry.actions, vec!["edit", "test"]);
+    assert_eq!(entry.tokens_used, Some(1234));
+    assert_eq!(entry.cost, Some(0.42));
+    assert_eq!(entry.checkpoint.as_ref().unwrap().commit, "def456");
+    agent.close().await.unwrap();
+
+    let request = sole_control_request(&log);
+    assert_eq!(request["method"], "autohand.automode.getLog");
+    assert_eq!(request["params"], serde_json::json!({"limit": 5}));
 }

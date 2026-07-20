@@ -46,3 +46,9 @@ business success or an optional CLI error without converting it to transport fai
 
 Call `cancel_automode(params)` to stop the active session. `reason` is optional;
 the result reports business success or an optional CLI error.
+
+## Read The Auto-Mode Iteration Log
+
+Call `get_automode_log(params)` with an optional `limit`. Each decoded entry
+contains its iteration, timestamp, actions, and optional token, cost, and
+checkpoint details.

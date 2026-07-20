@@ -3,17 +3,17 @@ use serde_json::Value;
 
 use crate::{
     json_output::{json_instruction, parse_json_as},
-    AutohandSdk, AutomodeCancelParams, AutomodeCancelResult, AutomodePauseResult,
-    AutomodeResumeResult, AutomodeStartParams, AutomodeStartResult, AutomodeStatusResult,
-    AutoresearchCompareParams, AutoresearchCompareResult, AutoresearchHistoryResult,
-    AutoresearchParetoResult, AutoresearchPinParams, AutoresearchPinResult,
-    AutoresearchPruneParams, AutoresearchPruneResult, AutoresearchReplayParams,
-    AutoresearchReplayResult, AutoresearchRescoreParams, AutoresearchRescoreResult,
-    AutoresearchStartParams, AutoresearchStartResult, AutoresearchStatusResult,
-    AutoresearchStopResult, BrowserHandoffAttachParams, BrowserHandoffAttachResult,
-    BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config, Error, GetSkillsRegistryParams,
-    GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult, GoalSnapshot,
-    GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
+    AutohandSdk, AutomodeCancelParams, AutomodeCancelResult, AutomodeGetLogParams,
+    AutomodeGetLogResult, AutomodePauseResult, AutomodeResumeResult, AutomodeStartParams,
+    AutomodeStartResult, AutomodeStatusResult, AutoresearchCompareParams,
+    AutoresearchCompareResult, AutoresearchHistoryResult, AutoresearchParetoResult,
+    AutoresearchPinParams, AutoresearchPinResult, AutoresearchPruneParams, AutoresearchPruneResult,
+    AutoresearchReplayParams, AutoresearchReplayResult, AutoresearchRescoreParams,
+    AutoresearchRescoreResult, AutoresearchStartParams, AutoresearchStartResult,
+    AutoresearchStatusResult, AutoresearchStopResult, BrowserHandoffAttachParams,
+    BrowserHandoffAttachResult, BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config,
+    Error, GetSkillsRegistryParams, GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult,
+    GoalSnapshot, GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
     McpGetServerConfigsResult, McpListServersResult, McpListToolsParams, McpListToolsResult,
     PromptOptions, ResetResult, Result, SdkEvent,
 };
@@ -135,6 +135,14 @@ impl Agent {
         params: AutomodeCancelParams,
     ) -> Result<AutomodeCancelResult> {
         self.sdk.cancel_automode(params).await
+    }
+
+    /// Returns auto-mode iteration records, optionally limited by the caller.
+    pub async fn get_automode_log(
+        &self,
+        params: AutomodeGetLogParams,
+    ) -> Result<AutomodeGetLogResult> {
+        self.sdk.get_automode_log(params).await
     }
 
     /// Starts a high-level slash-command run for an autoresearch objective.

@@ -56,6 +56,7 @@ Important methods:
 - `pause_automode()`
 - `resume_automode()`
 - `cancel_automode(params)`
+- `get_automode_log(params)`
 - `permission_response(request_id, decision)`
 - `start_autoresearch(params)` / `get_autoresearch_status()` / `stop_autoresearch()`
 - `get_autoresearch_history()` / `replay_autoresearch(params)`
@@ -130,6 +131,7 @@ Methods:
 - `pause_automode()`
 - `resume_automode()`
 - `cancel_automode(params)`
+- `get_automode_log(params)`
 - `close()`
 - `autoresearch(objective)`
 - `command(command, args)` / `deep_research(objective)`
