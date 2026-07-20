@@ -583,3 +583,16 @@ pub struct HookPreToolEvent {
     pub args: serde_json::Map<String, Value>,
     pub timestamp: String,
 }
+
+/// Hook notification emitted after a tool completes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookPostToolEvent {
+    pub tool_id: String,
+    pub tool_name: String,
+    pub success: bool,
+    pub duration: f64,
+    #[serde(default)]
+    pub output: Option<String>,
+    pub timestamp: String,
+}

@@ -589,3 +589,27 @@ async fn streams_typed_pre_tool_hook_from_spawned_cli() {
     );
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }
+
+#[tokio::test]
+async fn streams_typed_post_tool_hook_from_spawned_cli() {
+    let notification = r#"{"jsonrpc":"2.0","method":"autohand.hook.postTool","params":{"toolId":"tool-1","toolName":"read_file","success":true,"duration":12.5,"output":"contents","timestamp":"now"}}"#;
+    let mut fixture = CurrentCliFixture::start(r#"{"success":true}"#, notification).await;
+    let mut events = fixture
+        .sdk
+        .stream_prompt("emit", Default::default())
+        .await
+        .expect("start event stream");
+    let event = events
+        .recv()
+        .await
+        .expect("post-tool event")
+        .expect("valid SDK event");
+    let typed = event
+        .hook_post_tool()
+        .expect("post-tool hook kind")
+        .expect("valid post-tool hook");
+    assert!(typed.success);
+    assert_eq!(typed.duration, 12.5);
+    assert_eq!(typed.output.as_deref(), Some("contents"));
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}
