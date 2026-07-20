@@ -518,3 +518,26 @@ async fn streams_typed_automode_iteration_from_spawned_cli() {
         .is_err());
     malformed.sdk.stop().await.expect("stop malformed fixture");
 }
+
+#[tokio::test]
+async fn streams_typed_automode_completion_from_spawned_cli() {
+    let notification = r#"{"jsonrpc":"2.0","method":"autohand.automode.complete","params":{"sessionId":"auto-1","iterations":4,"filesCreated":2,"filesModified":5,"timestamp":"now"}}"#;
+    let mut fixture = CurrentCliFixture::start(r#"{"success":true}"#, notification).await;
+    let mut events = fixture
+        .sdk
+        .stream_prompt("emit", Default::default())
+        .await
+        .expect("start event stream");
+    let event = events
+        .recv()
+        .await
+        .expect("completion event")
+        .expect("valid SDK event");
+    let typed = event
+        .automode_complete()
+        .expect("auto-mode completion kind")
+        .expect("valid auto-mode completion");
+    assert_eq!(typed.iterations, 4);
+    assert_eq!(typed.files_modified, 5);
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}

@@ -553,3 +553,14 @@ pub struct AutomodeIterationEvent {
     pub tokens_used: Option<u64>,
     pub timestamp: String,
 }
+
+/// Terminal auto-mode completion totals.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomodeCompleteEvent {
+    pub session_id: String,
+    pub iterations: u64,
+    pub files_created: u64,
+    pub files_modified: u64,
+    pub timestamp: String,
+}
