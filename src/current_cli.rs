@@ -6,3 +6,10 @@ use serde::{Deserialize, Serialize};
 pub struct PermissionAcknowledgedResult {
     pub success: bool,
 }
+
+/// Result returned after allowing or denying a directory access request.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryAccessResponseResult {
+    pub success: bool,
+}

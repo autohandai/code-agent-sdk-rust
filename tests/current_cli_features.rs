@@ -94,3 +94,23 @@ async fn acknowledges_permission_through_spawned_cli() {
     ));
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }
+
+#[tokio::test]
+async fn responds_to_directory_access_through_spawned_cli() {
+    let mut fixture = CurrentCliFixture::start(r#"{"success":true}"#, "").await;
+    let result = fixture
+        .sdk
+        .respond_to_directory_access("directory-1", false)
+        .await
+        .expect("respond to directory access");
+    assert!(result.success);
+    fixture.assert_request(
+        "autohand.directoryAccessResponse",
+        &[r#""requestId":"directory-1""#, r#""granted":false"#],
+    );
+    assert!(matches!(
+        fixture.sdk.respond_to_directory_access("", true).await,
+        Err(Error::InvalidInput(_))
+    ));
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}

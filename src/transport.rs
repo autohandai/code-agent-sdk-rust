@@ -486,6 +486,26 @@ impl AutohandSdk {
         .await
     }
 
+    /// Allows or denies a pending request for access to an additional
+    /// directory.
+    pub async fn respond_to_directory_access(
+        &self,
+        request_id: impl Into<String>,
+        granted: bool,
+    ) -> Result<crate::DirectoryAccessResponseResult> {
+        let request_id = request_id.into();
+        if request_id.trim().is_empty() {
+            return Err(Error::InvalidInput(
+                "directory access request_id is required".into(),
+            ));
+        }
+        self.request_typed(
+            "autohand.directoryAccessResponse",
+            json!({ "requestId": request_id, "granted": granted }),
+        )
+        .await
+    }
+
     fn inner(&self) -> Result<Arc<TransportInner>> {
         self.lifecycle
             .inner
