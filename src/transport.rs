@@ -308,6 +308,9 @@ impl AutohandSdk {
 
     /// Starts an auto-mode task and returns once the CLI accepts the session.
     pub async fn start_automode(&self, params: AutomodeStartParams) -> Result<AutomodeStartResult> {
+        if params.prompt.trim().is_empty() {
+            return Err(Error::InvalidInput("automode prompt is required".into()));
+        }
         self.request_typed("autohand.automode.start", params).await
     }
 

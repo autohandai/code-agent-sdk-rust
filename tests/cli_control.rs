@@ -4,7 +4,7 @@ use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
 
 use autohand_sdk::{
     Agent, AutohandSdk, AutomodeCancelParams, AutomodeGetLogParams, AutomodeStartParams,
-    AutomodeStatus, BrowserHandoffAttachParams, BrowserHandoffCreateParams, Config,
+    AutomodeStatus, BrowserHandoffAttachParams, BrowserHandoffCreateParams, Config, Error,
 };
 use serde_json::Value;
 use tempfile::{tempdir, TempDir};
@@ -179,6 +179,29 @@ async fn automode_start_preserves_all_camel_case_options_and_decodes_acceptance(
             "maxCost": 7.5
         })
     );
+}
+
+#[tokio::test]
+async fn automode_start_rejects_a_blank_prompt_before_transport_access() {
+    let sdk = AutohandSdk::new(Config::default());
+
+    let error = sdk
+        .start_automode(AutomodeStartParams {
+            prompt: " \n\t".into(),
+            max_iterations: None,
+            completion_promise: None,
+            use_worktree: None,
+            checkpoint_interval: None,
+            max_runtime: None,
+            max_cost: None,
+        })
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        Error::InvalidInput(message) if message == "automode prompt is required"
+    ));
 }
 
 #[tokio::test]

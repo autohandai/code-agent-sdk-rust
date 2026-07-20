@@ -2,6 +2,10 @@
 
 These typed methods are available on both `AutohandSdk` and `Agent`.
 
+The compile-checked `sdk-control-features` example names every control method
+without contacting the CLI. Set `AUTOHAND_SDK_RUN_CONTROL_DEMO=1` only when you
+want it to execute all ten calls against an authenticated CLI session.
+
 ## Reset A Conversation
 
 Call `reset()` to clear the active conversation and start a new session. The
@@ -26,6 +30,7 @@ be selected without supplying a token.
 Call `start_automode(params)` with a required prompt and optional iteration,
 completion, worktree, checkpoint, runtime, and cost limits. A successful result
 contains the accepted auto-mode session ID; execution continues in the CLI.
+Whitespace-only prompts return `Error::InvalidInput` before transport access.
 
 ## Inspect Auto-Mode Status
 

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Configuration accepted by `autohand.automode.start`.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomodeStartParams {
     pub prompt: String,

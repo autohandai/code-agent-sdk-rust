@@ -68,6 +68,12 @@ Important methods:
 - `get_skills_registry(params)` / `install_skill(params)`
 - `list_mcp_servers()` / `list_mcp_tools(params)` / `get_mcp_server_configs()`
 
+`start_automode(params)` rejects a whitespace-only `prompt` with
+`Error::InvalidInput` before accessing the CLI transport. See the compile-checked
+`sdk-control-features` example for all ten conversation, browser handoff, and
+auto-mode control calls; live execution requires
+`AUTOHAND_SDK_RUN_CONTROL_DEMO=1`.
+
 ### Skill Registry And MCP Discovery
 
 ```rust

@@ -1,6 +1,10 @@
 #![allow(dead_code)]
 
-use autohand_sdk::{Agent, AutohandSdk, Config, JsonRunOptions, PromptOptions, Result, SdkEvent};
+use autohand_sdk::{
+    Agent, AutohandSdk, AutomodeCancelParams, AutomodeGetLogParams, AutomodeStartParams,
+    BrowserHandoffAttachParams, BrowserHandoffCreateParams, Config, JsonRunOptions, PromptOptions,
+    Result, SdkEvent,
+};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -87,7 +91,6 @@ pub async fn run_json_example() -> Result<()> {
 }
 
 pub async fn show_control_features() -> Result<()> {
-    let sdk = AutohandSdk::new(base_config());
     let methods = [
         "request",
         "prompt",
@@ -99,11 +102,91 @@ pub async fn show_control_features() -> Result<()> {
         "get_state",
         "get_messages",
         "permission_response",
+        "reset",
+        "create_browser_handoff",
+        "attach_browser_handoff",
+        "attach_latest_browser_handoff",
+        "start_automode",
+        "get_automode_status",
+        "pause_automode",
+        "resume_automode",
+        "cancel_automode",
+        "get_automode_log",
     ];
     for method in methods {
         println!("✓ SDK has method: {method}");
     }
-    drop(sdk);
+
+    if !matches!(
+        std::env::var("AUTOHAND_SDK_RUN_CONTROL_DEMO").as_deref(),
+        Ok("1")
+    ) {
+        println!(
+            "\nSet AUTOHAND_SDK_RUN_CONTROL_DEMO=1 to execute the ten control APIs against your authenticated CLI."
+        );
+        return Ok(());
+    }
+
+    let mut sdk = AutohandSdk::new(base_config());
+    sdk.start().await?;
+
+    let reset = sdk.reset().await?;
+    println!("reset: {reset:?}");
+
+    let handoff = sdk
+        .create_browser_handoff(BrowserHandoffCreateParams {
+            extension_id: None,
+            install_url: None,
+        })
+        .await?;
+    println!("created handoff: {handoff:?}");
+
+    let attached = sdk
+        .attach_browser_handoff(BrowserHandoffAttachParams {
+            token: handoff.token,
+        })
+        .await?;
+    println!("attached handoff: {attached:?}");
+
+    let latest = sdk.attach_latest_browser_handoff().await?;
+    println!("attached latest handoff: {latest:?}");
+
+    let started = sdk
+        .start_automode(AutomodeStartParams {
+            prompt: "Inspect this repository and report its test status without modifying files."
+                .into(),
+            max_iterations: Some(1),
+            completion_promise: Some("DONE".into()),
+            use_worktree: Some(true),
+            checkpoint_interval: Some(1),
+            max_runtime: Some(5),
+            max_cost: Some(0.25),
+        })
+        .await?;
+    println!("started auto-mode: {started:?}");
+
+    let status = sdk.get_automode_status().await?;
+    println!("auto-mode status: {status:?}");
+
+    let paused = sdk.pause_automode().await?;
+    println!("paused auto-mode: {paused:?}");
+
+    let resumed = sdk.resume_automode().await?;
+    println!("resumed auto-mode: {resumed:?}");
+
+    let cancelled = sdk
+        .cancel_automode(AutomodeCancelParams {
+            reason: Some("control example completed".into()),
+        })
+        .await?;
+    println!("cancelled auto-mode: {cancelled:?}");
+
+    let log = sdk
+        .get_automode_log(AutomodeGetLogParams { limit: Some(5) })
+        .await?;
+    println!("auto-mode log: {log:?}");
+
+    sdk.stop().await?;
     Ok(())
 }
 
