@@ -246,3 +246,60 @@ pub struct YoloSetResult {
     #[serde(default)]
     pub expires_in: Option<u64>,
 }
+
+/// JSON Schema root type accepted by the CLI for VS Code MCP tools.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum McpInputSchemaType {
+    Object,
+}
+
+/// Object-shaped argument schema for a VS Code MCP tool.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpInputSchema {
+    #[serde(rename = "type")]
+    pub schema_type: McpInputSchemaType,
+    pub properties: serde_json::Map<String, Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required: Vec<String>,
+}
+
+/// Tool descriptor supplied by a VS Code extension.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpVsCodeTool {
+    pub name: String,
+    pub description: String,
+    pub server_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_schema: Option<McpInputSchema>,
+}
+
+/// Replacement set of extension-provided MCP tools. An empty vector clears
+/// the current set.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpSetVsCodeToolsParams {
+    pub tools: Vec<McpVsCodeTool>,
+}
+
+impl McpSetVsCodeToolsParams {
+    pub(crate) fn validate(&self) -> Result<(), &'static str> {
+        if self.tools.iter().any(|tool| {
+            tool.name.trim().is_empty()
+                || tool.description.trim().is_empty()
+                || tool.server_name.trim().is_empty()
+        }) {
+            return Err("MCP tools require name, description, and server_name");
+        }
+        Ok(())
+    }
+}
+
+/// Result returned after replacing VS Code MCP tools.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpSetVsCodeToolsResult {
+    pub success: bool,
+}

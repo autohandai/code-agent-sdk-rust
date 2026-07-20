@@ -593,6 +593,18 @@ impl AutohandSdk {
         self.set_yolo_with_method("autohand.yolo.set", params).await
     }
 
+    /// Replaces the extension-provided MCP tool descriptors.
+    pub async fn set_vscode_mcp_tools(
+        &self,
+        params: crate::McpSetVsCodeToolsParams,
+    ) -> Result<crate::McpSetVsCodeToolsResult> {
+        params
+            .validate()
+            .map_err(|message| Error::InvalidInput(message.into()))?;
+        self.request_typed("autohand.mcp.setVscodeTools", params)
+            .await
+    }
+
     fn inner(&self) -> Result<Arc<TransportInner>> {
         self.lifecycle
             .inner

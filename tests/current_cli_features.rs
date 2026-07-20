@@ -1,7 +1,8 @@
 #![cfg(unix)]
 
 use autohand_sdk::{
-    AutohandSdk, ChangesDecisionParams, Config, Error, GetHistoryParams, SessionHistoryStatus,
+    AutohandSdk, ChangesDecisionParams, Config, Error, GetHistoryParams, McpInputSchema,
+    McpInputSchemaType, McpSetVsCodeToolsParams, McpVsCodeTool, SessionHistoryStatus,
     SessionLookupResult, YoloSetParams,
 };
 use std::{fs, num::NonZeroU64, os::unix::fs::PermissionsExt, path::PathBuf};
@@ -285,5 +286,54 @@ async fn sets_timed_yolo_through_both_wire_methods() {
         &[r#""pattern":"*""#, r#""timeoutSeconds":45"#],
     );
     fixture.assert_request("autohand.yolo.set", &[]);
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}
+
+#[tokio::test]
+async fn registers_vscode_mcp_tools_through_spawned_cli() {
+    let mut fixture = CurrentCliFixture::start(r#"{"success":true}"#, "").await;
+    let result = fixture
+        .sdk
+        .set_vscode_mcp_tools(McpSetVsCodeToolsParams {
+            tools: vec![McpVsCodeTool {
+                name: "issues".into(),
+                description: "List issues".into(),
+                server_name: "github".into(),
+                input_schema: Some(McpInputSchema {
+                    schema_type: McpInputSchemaType::Object,
+                    properties: serde_json::from_value(serde_json::json!({
+                        "state": {"type": "string"}
+                    }))
+                    .expect("object properties"),
+                    required: vec!["state".into()],
+                }),
+            }],
+        })
+        .await
+        .expect("register MCP tools");
+    assert!(result.success);
+    fixture.assert_request(
+        "autohand.mcp.setVscodeTools",
+        &[
+            r#""serverName":"github""#,
+            r#""inputSchema":{"properties""#,
+            r#""type":"object""#,
+            r#""required":["state"]"#,
+        ],
+    );
+    assert!(matches!(
+        fixture
+            .sdk
+            .set_vscode_mcp_tools(McpSetVsCodeToolsParams {
+                tools: vec![McpVsCodeTool {
+                    name: "broken".into(),
+                    description: String::new(),
+                    server_name: String::new(),
+                    input_schema: None,
+                }],
+            })
+            .await,
+        Err(Error::InvalidInput(_))
+    ));
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }
