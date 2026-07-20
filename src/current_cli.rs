@@ -13,3 +13,10 @@ pub struct PermissionAcknowledgedResult {
 pub struct DirectoryAccessResponseResult {
     pub success: bool,
 }
+
+/// Result returned after acknowledging a directory access request.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryAccessAcknowledgedResult {
+    pub success: bool,
+}

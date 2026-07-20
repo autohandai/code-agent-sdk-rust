@@ -114,3 +114,23 @@ async fn responds_to_directory_access_through_spawned_cli() {
     ));
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }
+
+#[tokio::test]
+async fn acknowledges_directory_access_through_spawned_cli() {
+    let mut fixture = CurrentCliFixture::start(r#"{"success":true}"#, "").await;
+    let result = fixture
+        .sdk
+        .acknowledge_directory_access("directory-2")
+        .await
+        .expect("acknowledge directory access");
+    assert!(result.success);
+    fixture.assert_request(
+        "autohand.directoryAccessAcknowledged",
+        &[r#""requestId":"directory-2""#],
+    );
+    assert!(matches!(
+        fixture.sdk.acknowledge_directory_access("\t").await,
+        Err(Error::InvalidInput(_))
+    ));
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}

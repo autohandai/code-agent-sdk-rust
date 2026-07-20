@@ -506,6 +506,24 @@ impl AutohandSdk {
         .await
     }
 
+    /// Confirms that a directory access request reached the SDK client.
+    pub async fn acknowledge_directory_access(
+        &self,
+        request_id: impl Into<String>,
+    ) -> Result<crate::DirectoryAccessAcknowledgedResult> {
+        let request_id = request_id.into();
+        if request_id.trim().is_empty() {
+            return Err(Error::InvalidInput(
+                "directory access request_id is required".into(),
+            ));
+        }
+        self.request_typed(
+            "autohand.directoryAccessAcknowledged",
+            json!({ "requestId": request_id }),
+        )
+        .await
+    }
+
     fn inner(&self) -> Result<Arc<TransportInner>> {
         self.lifecycle
             .inner
