@@ -635,3 +635,22 @@ pub struct McpToolsChangedEvent {
     pub tools: Vec<crate::McpToolInfo>,
     pub timestamp: String,
 }
+
+/// Active phase of a learning workflow.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LearningProgressStatus {
+    Analyzing,
+    LoadingRegistry,
+    Evaluating,
+    Generating,
+    Updating,
+}
+
+/// Progress notification from recommend, update, or generation workflows.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningProgressEvent {
+    pub status: LearningProgressStatus,
+    pub timestamp: String,
+}

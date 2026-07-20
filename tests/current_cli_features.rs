@@ -2,10 +2,10 @@
 
 use autohand_sdk::{
     AutohandSdk, ChangesDecisionParams, Config, Error, GetHistoryParams, LearnGenerateParams,
-    LearnRecommendParams, LearningAuditStatus, LearningUpdateStatus, McpInputSchema,
-    McpInputSchemaType, McpInvocationResponseParams, McpSetVsCodeToolsParams, McpVsCodeTool,
-    SessionHistoryStatus, SessionLookupResult, SkillGenerationScope, TokenUsageStatus,
-    ToolRegistrySource, YoloSetParams,
+    LearnRecommendParams, LearningAuditStatus, LearningProgressStatus, LearningUpdateStatus,
+    McpInputSchema, McpInputSchemaType, McpInvocationResponseParams, McpSetVsCodeToolsParams,
+    McpVsCodeTool, SessionHistoryStatus, SessionLookupResult, SkillGenerationScope,
+    TokenUsageStatus, ToolRegistrySource, YoloSetParams,
 };
 use std::{fs, num::NonZeroU64, os::unix::fs::PermissionsExt, path::PathBuf};
 use tempfile::{tempdir, TempDir};
@@ -709,5 +709,27 @@ async fn streams_typed_mcp_tools_changed_from_spawned_cli() {
         .expect("valid MCP tools changed event");
     assert_eq!(typed.tools.len(), 1);
     assert_eq!(typed.tools[0].server_name, "github");
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}
+
+#[tokio::test]
+async fn streams_typed_learning_progress_from_spawned_cli() {
+    let notification = r#"{"jsonrpc":"2.0","method":"autohand.learn.progress","params":{"status":"loading-registry","timestamp":"now"}}"#;
+    let mut fixture = CurrentCliFixture::start(r#"{"success":true}"#, notification).await;
+    let mut events = fixture
+        .sdk
+        .stream_prompt("emit", Default::default())
+        .await
+        .expect("start event stream");
+    let event = events
+        .recv()
+        .await
+        .expect("learning progress event")
+        .expect("valid SDK event");
+    let typed = event
+        .learning_progress()
+        .expect("learning progress kind")
+        .expect("valid learning progress event");
+    assert_eq!(typed.status, LearningProgressStatus::LoadingRegistry);
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }
