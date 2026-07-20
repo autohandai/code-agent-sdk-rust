@@ -467,6 +467,25 @@ impl AutohandSdk {
         .await
     }
 
+    /// Confirms that a permission request reached the SDK client. The request
+    /// must still be answered with [`Self::permission_response`].
+    pub async fn acknowledge_permission(
+        &self,
+        request_id: impl Into<String>,
+    ) -> Result<crate::PermissionAcknowledgedResult> {
+        let request_id = request_id.into();
+        if request_id.trim().is_empty() {
+            return Err(Error::InvalidInput(
+                "permission request_id is required".into(),
+            ));
+        }
+        self.request_typed(
+            "autohand.permissionAcknowledged",
+            json!({ "requestId": request_id }),
+        )
+        .await
+    }
+
     fn inner(&self) -> Result<Arc<TransportInner>> {
         self.lifecycle
             .inner
