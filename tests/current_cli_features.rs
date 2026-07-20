@@ -2,7 +2,7 @@
 
 use autohand_sdk::{
     AutohandSdk, ChangesDecisionParams, Config, Error, GetHistoryParams, SessionHistoryStatus,
-    SessionLookupResult,
+    SessionLookupResult, YoloSetParams,
 };
 use std::{fs, num::NonZeroU64, os::unix::fs::PermissionsExt, path::PathBuf};
 use tempfile::{tempdir, TempDir};
@@ -258,5 +258,32 @@ async fn attaches_session_through_spawned_cli() {
         fixture.sdk.attach_session(" ").await,
         Err(Error::InvalidInput(_))
     ));
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}
+
+#[tokio::test]
+async fn sets_timed_yolo_through_both_wire_methods() {
+    let mut fixture = CurrentCliFixture::start(r#"{"success":true,"expiresIn":45}"#, "").await;
+    let params = YoloSetParams {
+        pattern: "*".into(),
+        timeout_seconds: NonZeroU64::new(45),
+    };
+    let canonical = fixture
+        .sdk
+        .set_yolo(params.clone())
+        .await
+        .expect("set canonical YOLO mode");
+    let alias = fixture
+        .sdk
+        .set_yolo_alias(params)
+        .await
+        .expect("set alias YOLO mode");
+    assert_eq!(canonical.expires_in, Some(45));
+    assert_eq!(alias.expires_in, Some(45));
+    fixture.assert_request(
+        "autohand.yoloSet",
+        &[r#""pattern":"*""#, r#""timeoutSeconds":45"#],
+    );
+    fixture.assert_request("autohand.yolo.set", &[]);
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }

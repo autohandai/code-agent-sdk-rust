@@ -572,6 +572,27 @@ impl AutohandSdk {
         .await
     }
 
+    async fn set_yolo_with_method(
+        &self,
+        method: &str,
+        params: crate::YoloSetParams,
+    ) -> Result<crate::YoloSetResult> {
+        self.request_typed(method, params).await
+    }
+
+    /// Sets timed unrestricted mode through the canonical CLI method.
+    pub async fn set_yolo(&self, params: crate::YoloSetParams) -> Result<crate::YoloSetResult> {
+        self.set_yolo_with_method("autohand.yoloSet", params).await
+    }
+
+    /// Sets timed unrestricted mode through the dotted compatibility alias.
+    pub async fn set_yolo_alias(
+        &self,
+        params: crate::YoloSetParams,
+    ) -> Result<crate::YoloSetResult> {
+        self.set_yolo_with_method("autohand.yolo.set", params).await
+    }
+
     fn inner(&self) -> Result<Arc<TransportInner>> {
         self.lifecycle
             .inner

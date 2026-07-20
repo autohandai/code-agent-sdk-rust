@@ -227,3 +227,22 @@ pub struct SessionAttachResult {
     #[serde(default)]
     pub error: Option<String>,
 }
+
+/// Timed unrestricted-mode settings. The current CLI treats any non-empty
+/// pattern as enabled and an empty pattern as disabled.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct YoloSetParams {
+    pub pattern: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_seconds: Option<NonZeroU64>,
+}
+
+/// Effective timed unrestricted-mode state.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct YoloSetResult {
+    pub success: bool,
+    #[serde(default)]
+    pub expires_in: Option<u64>,
+}
