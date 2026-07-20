@@ -644,6 +644,12 @@ impl AutohandSdk {
             .await
     }
 
+    /// Enables or disables automatic context compaction.
+    pub async fn set_context_compact(&self, enabled: bool) -> Result<crate::ContextCompactResult> {
+        self.request_typed("autohand.setContextCompact", json!({ "enabled": enabled }))
+            .await
+    }
+
     fn inner(&self) -> Result<Arc<TransportInner>> {
         self.lifecycle
             .inner

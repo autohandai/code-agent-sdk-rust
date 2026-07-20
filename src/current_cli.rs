@@ -534,3 +534,10 @@ pub struct GetToolsRegistryResult {
     pub tools: Vec<ToolRegistryEntry>,
     pub diagnostics: Vec<ToolRegistryDiagnostic>,
 }
+
+/// Effective automatic context-compaction setting.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextCompactResult {
+    pub enabled: bool,
+}

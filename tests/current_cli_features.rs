@@ -462,3 +462,16 @@ async fn gets_tools_registry_through_spawned_cli() {
     fixture.assert_request("autohand.getToolsRegistry", &[r#""params":{}"#]);
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }
+
+#[tokio::test]
+async fn sets_context_compaction_through_spawned_cli() {
+    let mut fixture = CurrentCliFixture::start(r#"{"enabled":false}"#, "").await;
+    let result = fixture
+        .sdk
+        .set_context_compact(false)
+        .await
+        .expect("set context compaction");
+    assert!(!result.enabled);
+    fixture.assert_request("autohand.setContextCompact", &[r#""enabled":false"#]);
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}
