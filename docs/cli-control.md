@@ -20,3 +20,9 @@ include the restored session ID, workspace root, and message count.
 
 Use `attach_latest_browser_handoff()` when the newest unexpired handoff should
 be selected without supplying a token.
+
+## Start Auto-Mode
+
+Call `start_automode(params)` with a required prompt and optional iteration,
+completion, worktree, checkpoint, runtime, and cost limits. A successful result
+contains the accepted auto-mode session ID; execution continues in the CLI.

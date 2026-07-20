@@ -3,15 +3,15 @@ use serde_json::Value;
 
 use crate::{
     json_output::{json_instruction, parse_json_as},
-    AutohandSdk, AutoresearchCompareParams, AutoresearchCompareResult, AutoresearchHistoryResult,
-    AutoresearchParetoResult, AutoresearchPinParams, AutoresearchPinResult,
-    AutoresearchPruneParams, AutoresearchPruneResult, AutoresearchReplayParams,
-    AutoresearchReplayResult, AutoresearchRescoreParams, AutoresearchRescoreResult,
-    AutoresearchStartParams, AutoresearchStartResult, AutoresearchStatusResult,
-    AutoresearchStopResult, BrowserHandoffAttachParams, BrowserHandoffAttachResult,
-    BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config, Error, GetSkillsRegistryParams,
-    GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult, GoalSnapshot,
-    GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
+    AutohandSdk, AutomodeStartParams, AutomodeStartResult, AutoresearchCompareParams,
+    AutoresearchCompareResult, AutoresearchHistoryResult, AutoresearchParetoResult,
+    AutoresearchPinParams, AutoresearchPinResult, AutoresearchPruneParams, AutoresearchPruneResult,
+    AutoresearchReplayParams, AutoresearchReplayResult, AutoresearchRescoreParams,
+    AutoresearchRescoreResult, AutoresearchStartParams, AutoresearchStartResult,
+    AutoresearchStatusResult, AutoresearchStopResult, BrowserHandoffAttachParams,
+    BrowserHandoffAttachResult, BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config,
+    Error, GetSkillsRegistryParams, GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult,
+    GoalSnapshot, GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
     McpGetServerConfigsResult, McpListServersResult, McpListToolsParams, McpListToolsResult,
     PromptOptions, ResetResult, Result, SdkEvent,
 };
@@ -105,6 +105,11 @@ impl Agent {
     /// Attaches the most recently created, unexpired browser handoff.
     pub async fn attach_latest_browser_handoff(&self) -> Result<BrowserHandoffAttachResult> {
         self.sdk.attach_latest_browser_handoff().await
+    }
+
+    /// Starts an auto-mode task and returns once the CLI accepts the session.
+    pub async fn start_automode(&self, params: AutomodeStartParams) -> Result<AutomodeStartResult> {
+        self.sdk.start_automode(params).await
     }
 
     /// Starts a high-level slash-command run for an autoresearch objective.

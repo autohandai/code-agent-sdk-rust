@@ -3,7 +3,8 @@
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
 
 use autohand_sdk::{
-    Agent, AutohandSdk, BrowserHandoffAttachParams, BrowserHandoffCreateParams, Config,
+    Agent, AutohandSdk, AutomodeStartParams, BrowserHandoffAttachParams,
+    BrowserHandoffCreateParams, Config,
 };
 use serde_json::Value;
 use tempfile::{tempdir, TempDir};
@@ -140,4 +141,42 @@ async fn browser_handoff_attach_latest_uses_empty_params_and_accepts_omitted_fie
     let request = sole_control_request(&log);
     assert_eq!(request["method"], "autohand.browserHandoff.attachLatest");
     assert_eq!(request["params"], serde_json::json!({}));
+}
+
+#[tokio::test]
+async fn automode_start_preserves_all_camel_case_options_and_decodes_acceptance() {
+    let (_dir, log, sdk) = fixture(r#"{"success":true,"sessionId":"auto-1"}"#).await;
+    let mut agent = Agent::from_sdk(sdk);
+
+    let result = agent
+        .start_automode(AutomodeStartParams {
+            prompt: "Ship the release".into(),
+            max_iterations: Some(12),
+            completion_promise: Some("DONE".into()),
+            use_worktree: Some(true),
+            checkpoint_interval: Some(3),
+            max_runtime: Some(45),
+            max_cost: Some(7.5),
+        })
+        .await
+        .unwrap();
+    assert!(result.success);
+    assert_eq!(result.session_id.as_deref(), Some("auto-1"));
+    assert_eq!(result.error, None);
+    agent.close().await.unwrap();
+
+    let request = sole_control_request(&log);
+    assert_eq!(request["method"], "autohand.automode.start");
+    assert_eq!(
+        request["params"],
+        serde_json::json!({
+            "prompt": "Ship the release",
+            "maxIterations": 12,
+            "completionPromise": "DONE",
+            "useWorktree": true,
+            "checkpointInterval": 3,
+            "maxRuntime": 45,
+            "maxCost": 7.5
+        })
+    );
 }
