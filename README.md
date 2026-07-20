@@ -30,6 +30,8 @@ Use it when you want to embed Autohand inside a Rust service, developer tool, CL
 - Seven typed persistent-goal RPCs and live command discovery
 - Current session, AGENTS.md, token, skill-source, prompt-file, MCP, agent, and plugin flags
 - Startup feature settings, typed turn usage, and AutohandAI environment support
+- Typed community-skill discovery/installation and MCP server/tool/configuration inspection
+- Transactional, clone-safe lifecycle state and deterministic sub-50 ms startup gates
 
 ## Requirements
 
@@ -160,6 +162,22 @@ cargo run --example 01-hello-agent
 
 Live examples require an authenticated Autohand CLI and may ask for tool permissions depending on your CLI configuration.
 
+## Skill And MCP Discovery
+
+`Agent` and `AutohandSdk` expose `get_skills_registry`, `install_skill`,
+`list_mcp_servers`, `list_mcp_tools`, and `get_mcp_server_configs`. Their
+request and response structures are typed, including `SkillInstallScope` and
+`McpTransport` enums that match the current CLI wire contract.
+
+## Startup Performance
+
+A deterministic fake-CLI gate measures `publicImportMs`, `sdkStartReturnMs`,
+and `fixtureSpawnToFirstRpcMs` with five warmups and 50 samples. All
+wrapper-controlled p95 values must stay below 50 ms. See
+[Startup Performance](./docs/startup-performance.md) for boundaries, current
+results, and why live CLI/provider readiness remains an environment-dependent
+measurement.
+
 ## Documentation
 
 - [Getting Started](./docs/getting-started.md)
@@ -172,6 +190,7 @@ Live examples require an authenticated Autohand CLI and may ask for tool permiss
 - [Error Handling](./docs/error-handling.md)
 - [Examples](./docs/examples.md)
 - [Replayable Autoresearch](./docs/autoresearch.md)
+- [Startup Performance](./docs/startup-performance.md)
 - [Contributing](./CONTRIBUTING.md)
 - [Security](./SECURITY.md)
 

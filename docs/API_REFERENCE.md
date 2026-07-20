@@ -31,6 +31,10 @@ let config = Config::from_env()
 
 Low-level JSON-RPC wrapper.
 
+`autohand_sdk::initialize()` is an optional, idempotent eager-initialization
+hook. Normal SDK construction works without calling it explicitly; the startup
+benchmark uses it to isolate public crate initialization in a fresh process.
+
 Important methods:
 
 - `start()` / `stop()`
@@ -51,6 +55,41 @@ Important methods:
 - `stream_command(command, args)` / `supported_commands()` / `supports_command(command)`
 - `get_goal()` / `create_goal(params)` / `update_goal(params)` / `queue_goal(params)`
 - `start_queued_goal()` / `list_goal_templates()` / `clear_goal()`
+- `get_skills_registry(params)` / `install_skill(params)`
+- `list_mcp_servers()` / `list_mcp_tools(params)` / `get_mcp_server_configs()`
+
+### Skill Registry And MCP Discovery
+
+```rust
+use autohand_sdk::{
+    GetSkillsRegistryParams, InstallSkillParams, McpListToolsParams,
+    SkillInstallScope,
+};
+
+let registry = sdk
+    .get_skills_registry(GetSkillsRegistryParams {
+        force_refresh: Some(true),
+    })
+    .await?;
+let installed = sdk
+    .install_skill(InstallSkillParams {
+        skill_name: "code-review".into(),
+        scope: SkillInstallScope::Project,
+        force: None,
+    })
+    .await?;
+let servers = sdk.list_mcp_servers().await?;
+let tools = sdk
+    .list_mcp_tools(McpListToolsParams {
+        server_name: Some("github".into()),
+    })
+    .await?;
+let configs = sdk.get_mcp_server_configs().await?;
+```
+
+The MCP configuration transport is the closed `McpTransport::{Stdio, Sse,
+Http}` enum. Optional registry metadata and server configuration fields remain
+optional during deserialization.
 
 ## `Agent`
 
@@ -78,6 +117,7 @@ Methods:
 - `command(command, args)` / `deep_research(objective)`
 - All typed persistent-goal methods exposed by `AutohandSdk`
 - All typed autoresearch lifecycle and ledger methods exposed by `AutohandSdk`
+- All typed skill registry and MCP discovery methods exposed by `AutohandSdk`
 
 ## `Run`
 

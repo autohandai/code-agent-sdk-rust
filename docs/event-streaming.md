@@ -17,6 +17,10 @@ while let Some(event) = events.recv().await {
 }
 ```
 
+Dropping the receiver cancels that stream's in-flight prompt wait. The
+transport also removes its pending request ID immediately, so abandoned streams
+do not accumulate request state in long-lived hosts.
+
 ## Event Types
 
 - `message_update`: token or text delta.

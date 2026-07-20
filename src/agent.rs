@@ -8,8 +8,10 @@ use crate::{
     AutoresearchPruneParams, AutoresearchPruneResult, AutoresearchReplayParams,
     AutoresearchReplayResult, AutoresearchRescoreParams, AutoresearchRescoreResult,
     AutoresearchStartParams, AutoresearchStartResult, AutoresearchStatusResult,
-    AutoresearchStopResult, Config, Error, GoalCreateParams, GoalMutationResult, GoalSnapshot,
-    GoalTemplateMetadata, GoalUpdateParams, PromptOptions, Result, SdkEvent,
+    AutoresearchStopResult, Config, Error, GetSkillsRegistryParams, GetSkillsRegistryResult,
+    GoalCreateParams, GoalMutationResult, GoalSnapshot, GoalTemplateMetadata, GoalUpdateParams,
+    InstallSkillParams, InstallSkillResult, McpGetServerConfigsResult, McpListServersResult,
+    McpListToolsParams, McpListToolsResult, PromptOptions, Result, SdkEvent,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -110,6 +112,29 @@ impl Agent {
     }
     pub async fn clear_goal(&self) -> Result<GoalMutationResult> {
         self.sdk.clear_goal().await
+    }
+
+    pub async fn get_skills_registry(
+        &self,
+        params: GetSkillsRegistryParams,
+    ) -> Result<GetSkillsRegistryResult> {
+        self.sdk.get_skills_registry(params).await
+    }
+
+    pub async fn install_skill(&self, params: InstallSkillParams) -> Result<InstallSkillResult> {
+        self.sdk.install_skill(params).await
+    }
+
+    pub async fn list_mcp_servers(&self) -> Result<McpListServersResult> {
+        self.sdk.list_mcp_servers().await
+    }
+
+    pub async fn list_mcp_tools(&self, params: McpListToolsParams) -> Result<McpListToolsResult> {
+        self.sdk.list_mcp_tools(params).await
+    }
+
+    pub async fn get_mcp_server_configs(&self) -> Result<McpGetServerConfigsResult> {
+        self.sdk.get_mcp_server_configs().await
     }
 
     /// Initializes or resumes a persisted autoresearch loop.

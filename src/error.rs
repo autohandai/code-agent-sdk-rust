@@ -4,6 +4,8 @@ use thiserror::Error;
 pub enum Error {
     #[error("transport has not been started")]
     TransportNotStarted,
+    #[error("SDK lifecycle lock is poisoned")]
+    LifecyclePoisoned,
     #[error("request timed out: {0}")]
     RequestTimeout(String),
     #[error("RPC error {code}: {message}")]
