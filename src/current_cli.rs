@@ -1,4 +1,5 @@
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 use std::num::NonZeroU64;
 
 /// Result returned after acknowledging receipt of a permission request.
@@ -126,4 +127,88 @@ pub struct GetHistoryResult {
     pub current_page: u64,
     pub total_pages: u64,
     pub total_items: u64,
+}
+
+/// Role stored for a session message.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RpcMessageRole {
+    User,
+    Assistant,
+    System,
+    Tool,
+}
+
+/// Tool call stored inside an assistant message.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RpcToolCall {
+    pub id: String,
+    pub name: String,
+    pub args: serde_json::Map<String, Value>,
+}
+
+/// Message stored in a persisted session.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RpcMessage {
+    pub id: String,
+    pub role: RpcMessageRole,
+    pub content: String,
+    pub timestamp: String,
+    #[serde(default)]
+    pub tool_calls: Vec<RpcToolCall>,
+}
+
+/// Complete payload for a successfully loaded session.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionDetails {
+    pub session_id: String,
+    pub project_name: String,
+    pub model: String,
+    pub message_count: u64,
+    pub status: String,
+    pub created_at: String,
+    pub last_active_at: String,
+    #[serde(default)]
+    pub summary: Option<String>,
+    pub messages: Vec<RpcMessage>,
+    pub workspace_root: String,
+}
+
+/// A stored-session lookup is either complete details or an explicit failure.
+/// Custom deserialization rejects partial success payloads.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SessionLookupResult {
+    Success(SessionDetails),
+    Failure { error: Option<String> },
+}
+
+impl<'de> Deserialize<'de> for SessionLookupResult {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        let success = value
+            .get("success")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| D::Error::custom("missing boolean success discriminator"))?;
+        if success {
+            let details = serde_json::from_value::<SessionDetails>(value)
+                .map_err(|error| D::Error::custom(format!("invalid session details: {error}")))?;
+            if details.session_id.trim().is_empty() || details.workspace_root.trim().is_empty() {
+                return Err(D::Error::custom(
+                    "session details require sessionId and workspaceRoot",
+                ));
+            }
+            return Ok(Self::Success(details));
+        }
+        let error = value
+            .get("error")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        Ok(Self::Failure { error })
+    }
 }

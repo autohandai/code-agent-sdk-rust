@@ -543,6 +543,19 @@ impl AutohandSdk {
         self.request_typed("autohand.getHistory", params).await
     }
 
+    /// Returns complete stored session details or an explicit lookup failure.
+    pub async fn get_session(
+        &self,
+        session_id: impl Into<String>,
+    ) -> Result<crate::SessionLookupResult> {
+        let session_id = session_id.into();
+        if session_id.trim().is_empty() {
+            return Err(Error::InvalidInput("session_id is required".into()));
+        }
+        self.request_typed("autohand.getSession", json!({ "sessionId": session_id }))
+            .await
+    }
+
     fn inner(&self) -> Result<Arc<TransportInner>> {
         self.lifecycle
             .inner

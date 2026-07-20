@@ -2,6 +2,7 @@
 
 use autohand_sdk::{
     AutohandSdk, ChangesDecisionParams, Config, Error, GetHistoryParams, SessionHistoryStatus,
+    SessionLookupResult,
 };
 use std::{fs, num::NonZeroU64, os::unix::fs::PermissionsExt, path::PathBuf};
 use tempfile::{tempdir, TempDir};
@@ -194,4 +195,46 @@ async fn gets_session_history_through_spawned_cli() {
     assert_eq!(result.sessions[0].status, SessionHistoryStatus::Completed);
     fixture.assert_request("autohand.getHistory", &[r#""page":2"#, r#""pageSize":1"#]);
     fixture.sdk.stop().await.expect("stop fixture SDK");
+}
+
+#[tokio::test]
+async fn gets_typed_session_details_and_failures_through_spawned_cli() {
+    let mut fixture = CurrentCliFixture::start(
+        r#"{"success":true,"sessionId":"session-1","projectName":"tin","model":"gpt-5","messageCount":1,"status":"completed","createdAt":"now","lastActiveAt":"later","messages":[{"id":"message-1","role":"assistant","content":"done","timestamp":"later"}],"workspaceRoot":"/workspace"}"#,
+        "",
+    )
+    .await;
+    let result = fixture
+        .sdk
+        .get_session("session-1")
+        .await
+        .expect("get session details");
+    match result {
+        SessionLookupResult::Success(details) => assert_eq!(details.messages.len(), 1),
+        SessionLookupResult::Failure { error } => panic!("unexpected failure: {error:?}"),
+    }
+    fixture.assert_request("autohand.getSession", &[r#""sessionId":"session-1""#]);
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+
+    let mut missing =
+        CurrentCliFixture::start(r#"{"success":false,"error":"not found"}"#, "").await;
+    assert_eq!(
+        missing
+            .sdk
+            .get_session("missing")
+            .await
+            .expect("failure result"),
+        SessionLookupResult::Failure {
+            error: Some("not found".into())
+        }
+    );
+    missing.sdk.stop().await.expect("stop missing fixture");
+
+    let mut malformed =
+        CurrentCliFixture::start(r#"{"success":true,"sessionId":"partial"}"#, "").await;
+    assert!(matches!(
+        malformed.sdk.get_session("partial").await,
+        Err(Error::Json(_))
+    ));
+    malformed.sdk.stop().await.expect("stop malformed fixture");
 }
