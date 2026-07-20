@@ -78,6 +78,12 @@ impl SdkEvent {
     pub fn turn_end_usage(&self) -> Option<serde_json::Result<TurnEndUsage>> {
         (self.event_type == "turn_end").then(|| serde_json::from_value(self.raw.clone()))
     }
+
+    /// Decodes an auto-mode iteration while retaining `raw` for forward
+    /// compatibility.
+    pub fn automode_iteration(&self) -> Option<serde_json::Result<crate::AutomodeIterationEvent>> {
+        (self.event_type == "automode_iteration").then(|| serde_json::from_value(self.raw.clone()))
+    }
 }
 
 pub(crate) fn event_from_notification(method: &str, mut params: Value) -> SdkEvent {
@@ -134,6 +140,7 @@ fn method_to_type(method: &str) -> String {
         "autohand.toolUpdate" => "tool_update",
         "autohand.toolEnd" => "tool_end",
         "autohand.permissionRequest" => "permission_request",
+        "autohand.automode.iteration" => "automode_iteration",
         "autohand.autoresearch.start"
         | "autohand.autoresearch.status"
         | "autohand.autoresearch.pause"

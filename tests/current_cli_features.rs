@@ -475,3 +475,46 @@ async fn sets_context_compaction_through_spawned_cli() {
     fixture.assert_request("autohand.setContextCompact", &[r#""enabled":false"#]);
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }
+
+#[tokio::test]
+async fn streams_typed_automode_iteration_from_spawned_cli() {
+    let notification = r#"{"jsonrpc":"2.0","method":"autohand.automode.iteration","params":{"sessionId":"auto-1","iteration":3,"actions":["edit","test"],"tokensUsed":321,"timestamp":"now"}}"#;
+    let mut fixture = CurrentCliFixture::start(r#"{"success":true}"#, notification).await;
+    let mut events = fixture
+        .sdk
+        .stream_prompt("emit", Default::default())
+        .await
+        .expect("start event stream");
+    let event = events
+        .recv()
+        .await
+        .expect("iteration event")
+        .expect("valid SDK event");
+    let typed = event
+        .automode_iteration()
+        .expect("auto-mode iteration kind")
+        .expect("valid auto-mode iteration");
+    assert_eq!(typed.iteration, 3);
+    assert_eq!(typed.tokens_used, Some(321));
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+
+    let malformed_notification =
+        r#"{"jsonrpc":"2.0","method":"autohand.automode.iteration","params":{"sessionId":7}}"#;
+    let mut malformed =
+        CurrentCliFixture::start(r#"{"success":true}"#, malformed_notification).await;
+    let mut malformed_events = malformed
+        .sdk
+        .stream_prompt("emit", Default::default())
+        .await
+        .expect("start malformed event stream");
+    let malformed_event = malformed_events
+        .recv()
+        .await
+        .expect("malformed event")
+        .expect("raw SDK event remains available");
+    assert!(malformed_event
+        .automode_iteration()
+        .expect("auto-mode iteration kind")
+        .is_err());
+    malformed.sdk.stop().await.expect("stop malformed fixture");
+}

@@ -541,3 +541,15 @@ pub struct GetToolsRegistryResult {
 pub struct ContextCompactResult {
     pub enabled: bool,
 }
+
+/// One completed auto-mode iteration notification.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomodeIterationEvent {
+    pub session_id: String,
+    pub iteration: u64,
+    pub actions: Vec<String>,
+    #[serde(default)]
+    pub tokens_used: Option<u64>,
+    pub timestamp: String,
+}
