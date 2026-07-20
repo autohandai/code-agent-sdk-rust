@@ -415,3 +415,32 @@ pub struct LearnRecommendResult {
     #[serde(default)]
     pub error: Option<String>,
 }
+
+/// Outcome for one installed-skill update.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LearningUpdateStatus {
+    Updated,
+    Unchanged,
+    Failed,
+}
+
+/// Update outcome for one installed skill.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningUpdateEntry {
+    pub name: String,
+    pub status: LearningUpdateStatus,
+}
+
+/// Summary of registry-backed installed-skill updates.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LearnUpdateResult {
+    pub success: bool,
+    pub updated: u64,
+    pub unchanged: u64,
+    pub results: Vec<LearningUpdateEntry>,
+    #[serde(default)]
+    pub error: Option<String>,
+}

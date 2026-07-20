@@ -625,6 +625,11 @@ impl AutohandSdk {
         self.request_typed("autohand.learn.recommend", params).await
     }
 
+    /// Updates installed project skills from the registry.
+    pub async fn update_project_learning(&self) -> Result<crate::LearnUpdateResult> {
+        self.request_typed("autohand.learn.update", json!({})).await
+    }
+
     fn inner(&self) -> Result<Arc<TransportInner>> {
         self.lifecycle
             .inner

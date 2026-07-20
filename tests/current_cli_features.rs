@@ -2,9 +2,9 @@
 
 use autohand_sdk::{
     AutohandSdk, ChangesDecisionParams, Config, Error, GetHistoryParams, LearnRecommendParams,
-    LearningAuditStatus, McpInputSchema, McpInputSchemaType, McpInvocationResponseParams,
-    McpSetVsCodeToolsParams, McpVsCodeTool, SessionHistoryStatus, SessionLookupResult,
-    YoloSetParams,
+    LearningAuditStatus, LearningUpdateStatus, McpInputSchema, McpInputSchemaType,
+    McpInvocationResponseParams, McpSetVsCodeToolsParams, McpVsCodeTool, SessionHistoryStatus,
+    SessionLookupResult, YoloSetParams,
 };
 use std::{fs, num::NonZeroU64, os::unix::fs::PermissionsExt, path::PathBuf};
 use tempfile::{tempdir, TempDir};
@@ -402,5 +402,23 @@ async fn recommends_project_learning_through_spawned_cli() {
     assert_eq!(result.audit[0].status, LearningAuditStatus::Outdated);
     assert!(result.gap_analysis.is_some());
     fixture.assert_request("autohand.learn.recommend", &[r#""deep":true"#]);
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}
+
+#[tokio::test]
+async fn updates_project_learning_through_spawned_cli() {
+    let mut fixture = CurrentCliFixture::start(
+        r#"{"success":true,"updated":1,"unchanged":2,"results":[{"name":"testing","status":"updated"}]}"#,
+        "",
+    )
+    .await;
+    let result = fixture
+        .sdk
+        .update_project_learning()
+        .await
+        .expect("update project learning");
+    assert_eq!(result.updated, 1);
+    assert_eq!(result.results[0].status, LearningUpdateStatus::Updated);
+    fixture.assert_request("autohand.learn.update", &[r#""params":{}"#]);
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }
