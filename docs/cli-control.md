@@ -12,3 +12,8 @@ returned `ResetResult::session_id` is the CLI-assigned session identifier.
 Call `create_browser_handoff(params)` to create a continuation token for the
 active session. `extension_id` and `install_url` are optional; the result
 contains the token, session and workspace identifiers, timestamps, and URL.
+
+## Attach A Browser Handoff
+
+Call `attach_browser_handoff(params)` with a token. A successful result may
+include the restored session ID, workspace root, and message count.

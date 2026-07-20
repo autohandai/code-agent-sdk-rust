@@ -23,11 +23,12 @@ use crate::{
     AutoresearchPinParams, AutoresearchPinResult, AutoresearchPruneParams, AutoresearchPruneResult,
     AutoresearchReplayParams, AutoresearchReplayResult, AutoresearchRescoreParams,
     AutoresearchRescoreResult, AutoresearchStartParams, AutoresearchStartResult,
-    AutoresearchStatusResult, AutoresearchStopResult, BrowserHandoffCreateParams,
-    BrowserHandoffCreateResult, Config, Error, GetSkillsRegistryParams, GetSkillsRegistryResult,
-    GoalCreateParams, GoalMutationResult, GoalSnapshot, GoalTemplateMetadata, GoalUpdateParams,
-    InstallSkillParams, InstallSkillResult, McpGetServerConfigsResult, McpListServersResult,
-    McpListToolsParams, McpListToolsResult, ResetResult, Result, SdkEvent,
+    AutoresearchStatusResult, AutoresearchStopResult, BrowserHandoffAttachParams,
+    BrowserHandoffAttachResult, BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config,
+    Error, GetSkillsRegistryParams, GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult,
+    GoalSnapshot, GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
+    McpGetServerConfigsResult, McpListServersResult, McpListToolsParams, McpListToolsResult,
+    ResetResult, Result, SdkEvent,
 };
 
 #[derive(Clone)]
@@ -284,6 +285,15 @@ impl AutohandSdk {
         params: BrowserHandoffCreateParams,
     ) -> Result<BrowserHandoffCreateResult> {
         self.request_typed("autohand.browserHandoff.create", params)
+            .await
+    }
+
+    /// Attaches the session referenced by a browser handoff token.
+    pub async fn attach_browser_handoff(
+        &self,
+        params: BrowserHandoffAttachParams,
+    ) -> Result<BrowserHandoffAttachResult> {
+        self.request_typed("autohand.browserHandoff.attach", params)
             .await
     }
 

@@ -49,6 +49,7 @@ Important methods:
 - `get_state()`
 - `get_messages()`
 - `create_browser_handoff(params)`
+- `attach_browser_handoff(params)`
 - `permission_response(request_id, decision)`
 - `start_autoresearch(params)` / `get_autoresearch_status()` / `stop_autoresearch()`
 - `get_autoresearch_history()` / `replay_autoresearch(params)`
@@ -116,6 +117,7 @@ Methods:
 - `set_plan_mode(enabled)`
 - `reset()`
 - `create_browser_handoff(params)`
+- `attach_browser_handoff(params)`
 - `close()`
 - `autoresearch(objective)`
 - `command(command, args)` / `deep_research(objective)`

@@ -2,7 +2,9 @@
 
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
 
-use autohand_sdk::{Agent, AutohandSdk, BrowserHandoffCreateParams, Config};
+use autohand_sdk::{
+    Agent, AutohandSdk, BrowserHandoffAttachParams, BrowserHandoffCreateParams, Config,
+};
 use serde_json::Value;
 use tempfile::{tempdir, TempDir};
 
@@ -92,5 +94,33 @@ async fn browser_handoff_create_preserves_camel_case_and_decodes_all_fields() {
             "extensionId": "ext-id",
             "installUrl": "https://example.test/install"
         })
+    );
+}
+
+#[tokio::test]
+async fn browser_handoff_attach_sends_the_token_and_decodes_optional_session_fields() {
+    let (_dir, log, sdk) = fixture(
+        r#"{"success":true,"sessionId":"session-1","workspaceRoot":"/workspace","messageCount":7}"#,
+    )
+    .await;
+    let mut agent = Agent::from_sdk(sdk);
+
+    let result = agent
+        .attach_browser_handoff(BrowserHandoffAttachParams {
+            token: "handoff-token".into(),
+        })
+        .await
+        .unwrap();
+    assert!(result.success);
+    assert_eq!(result.session_id.as_deref(), Some("session-1"));
+    assert_eq!(result.workspace_root.as_deref(), Some("/workspace"));
+    assert_eq!(result.message_count, Some(7));
+    agent.close().await.unwrap();
+
+    let request = sole_control_request(&log);
+    assert_eq!(request["method"], "autohand.browserHandoff.attach");
+    assert_eq!(
+        request["params"],
+        serde_json::json!({"token": "handoff-token"})
     );
 }

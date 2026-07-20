@@ -21,3 +21,22 @@ pub struct BrowserHandoffCreateResult {
     pub expires_at: String,
     pub url: String,
 }
+
+/// Token used to attach a browser handoff.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BrowserHandoffAttachParams {
+    pub token: String,
+}
+
+/// Result of attaching a browser handoff to its persisted session.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserHandoffAttachResult {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_root: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_count: Option<u64>,
+}

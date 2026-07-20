@@ -8,9 +8,10 @@ use crate::{
     AutoresearchPruneParams, AutoresearchPruneResult, AutoresearchReplayParams,
     AutoresearchReplayResult, AutoresearchRescoreParams, AutoresearchRescoreResult,
     AutoresearchStartParams, AutoresearchStartResult, AutoresearchStatusResult,
-    AutoresearchStopResult, BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config, Error,
-    GetSkillsRegistryParams, GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult,
-    GoalSnapshot, GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
+    AutoresearchStopResult, BrowserHandoffAttachParams, BrowserHandoffAttachResult,
+    BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config, Error, GetSkillsRegistryParams,
+    GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult, GoalSnapshot,
+    GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
     McpGetServerConfigsResult, McpListServersResult, McpListToolsParams, McpListToolsResult,
     PromptOptions, ResetResult, Result, SdkEvent,
 };
@@ -91,6 +92,14 @@ impl Agent {
         params: BrowserHandoffCreateParams,
     ) -> Result<BrowserHandoffCreateResult> {
         self.sdk.create_browser_handoff(params).await
+    }
+
+    /// Attaches the session referenced by a browser handoff token.
+    pub async fn attach_browser_handoff(
+        &self,
+        params: BrowserHandoffAttachParams,
+    ) -> Result<BrowserHandoffAttachResult> {
+        self.sdk.attach_browser_handoff(params).await
     }
 
     /// Starts a high-level slash-command run for an autoresearch objective.
