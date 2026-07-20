@@ -688,3 +688,26 @@ async fn streams_typed_mcp_invocation_request_from_spawned_cli() {
     );
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }
+
+#[tokio::test]
+async fn streams_typed_mcp_tools_changed_from_spawned_cli() {
+    let notification = r#"{"jsonrpc":"2.0","method":"autohand.mcp.toolsChanged","params":{"tools":[{"name":"vscode__github__issues","description":"List issues","serverName":"github"}],"timestamp":"now"}}"#;
+    let mut fixture = CurrentCliFixture::start(r#"{"success":true}"#, notification).await;
+    let mut events = fixture
+        .sdk
+        .stream_prompt("emit", Default::default())
+        .await
+        .expect("start event stream");
+    let event = events
+        .recv()
+        .await
+        .expect("MCP tools event")
+        .expect("valid SDK event");
+    let typed = event
+        .mcp_tools_changed()
+        .expect("MCP tools changed kind")
+        .expect("valid MCP tools changed event");
+    assert_eq!(typed.tools.len(), 1);
+    assert_eq!(typed.tools[0].server_name, "github");
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}

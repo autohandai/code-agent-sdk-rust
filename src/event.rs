@@ -114,6 +114,10 @@ impl SdkEvent {
     ) -> Option<serde_json::Result<crate::McpInvocationRequestEvent>> {
         (self.event_type == "mcp_invoke_request").then(|| serde_json::from_value(self.raw.clone()))
     }
+
+    pub fn mcp_tools_changed(&self) -> Option<serde_json::Result<crate::McpToolsChangedEvent>> {
+        (self.event_type == "mcp_tools_changed").then(|| serde_json::from_value(self.raw.clone()))
+    }
 }
 
 pub(crate) fn event_from_notification(method: &str, mut params: Value) -> SdkEvent {
@@ -178,6 +182,7 @@ fn method_to_type(method: &str) -> String {
         "autohand.hook.prePrompt" => "hook_pre_prompt",
         "autohand.hook.postResponse" => "hook_post_response",
         "autohand.mcp.invokeRequest" => "mcp_invoke_request",
+        "autohand.mcp.toolsChanged" => "mcp_tools_changed",
         "autohand.autoresearch.start"
         | "autohand.autoresearch.status"
         | "autohand.autoresearch.pause"

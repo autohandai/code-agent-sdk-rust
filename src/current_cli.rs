@@ -627,3 +627,11 @@ pub struct McpInvocationRequestEvent {
     pub args: serde_json::Map<String, Value>,
     pub timestamp: String,
 }
+
+/// Complete current set of extension-provided MCP tools.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolsChangedEvent {
+    pub tools: Vec<crate::McpToolInfo>,
+    pub timestamp: String,
+}
