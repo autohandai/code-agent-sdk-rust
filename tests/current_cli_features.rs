@@ -4,7 +4,8 @@ use autohand_sdk::{
     AutohandSdk, ChangesDecisionParams, Config, Error, GetHistoryParams, LearnGenerateParams,
     LearnRecommendParams, LearningAuditStatus, LearningUpdateStatus, McpInputSchema,
     McpInputSchemaType, McpInvocationResponseParams, McpSetVsCodeToolsParams, McpVsCodeTool,
-    SessionHistoryStatus, SessionLookupResult, SkillGenerationScope, YoloSetParams,
+    SessionHistoryStatus, SessionLookupResult, SkillGenerationScope, ToolRegistrySource,
+    YoloSetParams,
 };
 use std::{fs, num::NonZeroU64, os::unix::fs::PermissionsExt, path::PathBuf};
 use tempfile::{tempdir, TempDir};
@@ -439,5 +440,25 @@ async fn generates_project_skill_through_spawned_cli() {
         .expect("generate project skill");
     assert_eq!(result.skill_name.as_deref(), Some("release"));
     fixture.assert_request("autohand.learn.generate", &[r#""scope":"project""#]);
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}
+
+#[tokio::test]
+async fn gets_tools_registry_through_spawned_cli() {
+    let mut fixture = CurrentCliFixture::start(
+        r#"{"tools":[{"name":"read_file","description":"Read a file","requiresApproval":false,"source":"builtin"},{"name":"review","description":"Review code","source":"extension","scope":"project","extensionId":"quality"}],"diagnostics":[{"file":"broken.json","reason":"invalid schema"}]}"#,
+        "",
+    )
+    .await;
+    let result = fixture
+        .sdk
+        .get_tools_registry()
+        .await
+        .expect("get tools registry");
+    assert_eq!(result.tools.len(), 2);
+    assert_eq!(result.tools[1].source, ToolRegistrySource::Extension);
+    assert_eq!(result.tools[0].requires_approval, Some(false));
+    assert_eq!(result.diagnostics.len(), 1);
+    fixture.assert_request("autohand.getToolsRegistry", &[r#""params":{}"#]);
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }

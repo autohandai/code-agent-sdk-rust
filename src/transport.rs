@@ -638,6 +638,12 @@ impl AutohandSdk {
         self.request_typed("autohand.learn.generate", params).await
     }
 
+    /// Returns all registered tools and definition diagnostics.
+    pub async fn get_tools_registry(&self) -> Result<crate::GetToolsRegistryResult> {
+        self.request_typed("autohand.getToolsRegistry", json!({}))
+            .await
+    }
+
     fn inner(&self) -> Result<Arc<TransportInner>> {
         self.lifecycle
             .inner

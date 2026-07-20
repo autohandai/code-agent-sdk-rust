@@ -472,3 +472,65 @@ pub struct LearnGenerateResult {
     #[serde(default)]
     pub error: Option<String>,
 }
+
+/// Origin of a registered tool.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolRegistrySource {
+    Builtin,
+    Meta,
+    Extension,
+}
+
+/// Persistence scope of a custom registered tool.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolRegistryScope {
+    User,
+    Project,
+}
+
+/// Built-in, metadata, or extension tool exposed by the CLI.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolRegistryEntry {
+    pub name: String,
+    pub description: String,
+    #[serde(default)]
+    pub requires_approval: Option<bool>,
+    #[serde(default)]
+    pub approval_message: Option<String>,
+    pub source: ToolRegistrySource,
+    #[serde(default)]
+    pub scope: Option<ToolRegistryScope>,
+    #[serde(default)]
+    pub disabled: Option<bool>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub schema_version: Option<u64>,
+    #[serde(default)]
+    pub handler_preview: Option<String>,
+    #[serde(default)]
+    pub reuse_hint: Option<String>,
+    #[serde(default)]
+    pub extension_id: Option<String>,
+    #[serde(default)]
+    pub extension_version: Option<String>,
+}
+
+/// Invalid tool definition skipped by the CLI.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolRegistryDiagnostic {
+    pub file: String,
+    pub reason: String,
+}
+
+/// Live tool registry and definition diagnostics.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GetToolsRegistryResult {
+    pub tools: Vec<ToolRegistryEntry>,
+    pub diagnostics: Vec<ToolRegistryDiagnostic>,
+}
