@@ -102,6 +102,11 @@ impl Agent {
         self.sdk.attach_browser_handoff(params).await
     }
 
+    /// Attaches the most recently created, unexpired browser handoff.
+    pub async fn attach_latest_browser_handoff(&self) -> Result<BrowserHandoffAttachResult> {
+        self.sdk.attach_latest_browser_handoff().await
+    }
+
     /// Starts a high-level slash-command run for an autoresearch objective.
     pub async fn autoresearch(&self, objective: impl Into<String>) -> Result<Run> {
         self.command("/autoresearch", &[objective.into()]).await

@@ -124,3 +124,20 @@ async fn browser_handoff_attach_sends_the_token_and_decodes_optional_session_fie
         serde_json::json!({"token": "handoff-token"})
     );
 }
+
+#[tokio::test]
+async fn browser_handoff_attach_latest_uses_empty_params_and_accepts_omitted_fields() {
+    let (_dir, log, sdk) = fixture(r#"{"success":false}"#).await;
+    let mut agent = Agent::from_sdk(sdk);
+
+    let result = agent.attach_latest_browser_handoff().await.unwrap();
+    assert!(!result.success);
+    assert_eq!(result.session_id, None);
+    assert_eq!(result.workspace_root, None);
+    assert_eq!(result.message_count, None);
+    agent.close().await.unwrap();
+
+    let request = sole_control_request(&log);
+    assert_eq!(request["method"], "autohand.browserHandoff.attachLatest");
+    assert_eq!(request["params"], serde_json::json!({}));
+}

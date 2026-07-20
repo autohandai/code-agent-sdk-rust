@@ -17,3 +17,6 @@ contains the token, session and workspace identifiers, timestamps, and URL.
 
 Call `attach_browser_handoff(params)` with a token. A successful result may
 include the restored session ID, workspace root, and message count.
+
+Use `attach_latest_browser_handoff()` when the newest unexpired handoff should
+be selected without supplying a token.

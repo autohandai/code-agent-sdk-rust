@@ -297,6 +297,12 @@ impl AutohandSdk {
             .await
     }
 
+    /// Attaches the most recently created, unexpired browser handoff.
+    pub async fn attach_latest_browser_handoff(&self) -> Result<BrowserHandoffAttachResult> {
+        self.request_typed("autohand.browserHandoff.attachLatest", json!({}))
+            .await
+    }
+
     pub async fn get_skills_registry(
         &self,
         params: GetSkillsRegistryParams,
