@@ -605,6 +605,18 @@ impl AutohandSdk {
             .await
     }
 
+    /// Completes a VS Code MCP invocation requested by the CLI.
+    pub async fn respond_to_mcp_invocation(
+        &self,
+        params: crate::McpInvocationResponseParams,
+    ) -> Result<crate::McpInvocationResponseResult> {
+        params
+            .validate()
+            .map_err(|message| Error::InvalidInput(message.into()))?;
+        self.request_typed("autohand.mcp.invokeResponse", params)
+            .await
+    }
+
     fn inner(&self) -> Result<Arc<TransportInner>> {
         self.lifecycle
             .inner

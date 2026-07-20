@@ -1,4 +1,4 @@
-use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use std::num::NonZeroU64;
 
@@ -301,5 +301,69 @@ impl McpSetVsCodeToolsParams {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct McpSetVsCodeToolsResult {
+    pub success: bool,
+}
+
+/// Completion of an MCP invocation requested by the CLI. Separate variants
+/// prevent ambiguous result-plus-error payloads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpInvocationResponseParams {
+    Success {
+        request_id: String,
+        result: Option<String>,
+    },
+    Failure {
+        request_id: String,
+        error: String,
+    },
+}
+
+impl McpInvocationResponseParams {
+    pub(crate) fn validate(&self) -> Result<(), &'static str> {
+        match self {
+            Self::Success { request_id, .. } if request_id.trim().is_empty() => {
+                Err("MCP invocation request_id is required")
+            }
+            Self::Failure { request_id, .. } if request_id.trim().is_empty() => {
+                Err("MCP invocation request_id is required")
+            }
+            Self::Failure { error, .. } if error.trim().is_empty() => {
+                Err("failed MCP invocation responses require an error")
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
+impl Serialize for McpInvocationResponseParams {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::Success { request_id, result } => {
+                let mut payload = serde_json::Map::from_iter([
+                    ("requestId".into(), Value::String(request_id.clone())),
+                    ("success".into(), Value::Bool(true)),
+                ]);
+                if let Some(result) = result {
+                    payload.insert("result".into(), Value::String(result.clone()));
+                }
+                Value::Object(payload).serialize(serializer)
+            }
+            Self::Failure { request_id, error } => serde_json::json!({
+                "requestId": request_id,
+                "success": false,
+                "error": error,
+            })
+            .serialize(serializer),
+        }
+    }
+}
+
+/// Result returned after completing a pending MCP invocation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpInvocationResponseResult {
     pub success: bool,
 }

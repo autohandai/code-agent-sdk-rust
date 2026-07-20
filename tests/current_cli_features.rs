@@ -2,8 +2,8 @@
 
 use autohand_sdk::{
     AutohandSdk, ChangesDecisionParams, Config, Error, GetHistoryParams, McpInputSchema,
-    McpInputSchemaType, McpSetVsCodeToolsParams, McpVsCodeTool, SessionHistoryStatus,
-    SessionLookupResult, YoloSetParams,
+    McpInputSchemaType, McpInvocationResponseParams, McpSetVsCodeToolsParams, McpVsCodeTool,
+    SessionHistoryStatus, SessionLookupResult, YoloSetParams,
 };
 use std::{fs, num::NonZeroU64, os::unix::fs::PermissionsExt, path::PathBuf};
 use tempfile::{tempdir, TempDir};
@@ -335,5 +335,53 @@ async fn registers_vscode_mcp_tools_through_spawned_cli() {
             .await,
         Err(Error::InvalidInput(_))
     ));
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}
+
+#[tokio::test]
+async fn responds_to_mcp_invocation_through_spawned_cli() {
+    let mut fixture = CurrentCliFixture::start(r#"{"success":true}"#, "").await;
+    let result = fixture
+        .sdk
+        .respond_to_mcp_invocation(McpInvocationResponseParams::Failure {
+            request_id: "invoke-1".into(),
+            error: "tool unavailable".into(),
+        })
+        .await
+        .expect("respond to MCP invocation");
+    assert!(result.success);
+    fixture.assert_request(
+        "autohand.mcp.invokeResponse",
+        &[
+            r#""requestId":"invoke-1""#,
+            r#""success":false"#,
+            r#""error":"tool unavailable""#,
+        ],
+    );
+    assert!(matches!(
+        fixture
+            .sdk
+            .respond_to_mcp_invocation(McpInvocationResponseParams::Failure {
+                request_id: "invoke-2".into(),
+                error: String::new(),
+            })
+            .await,
+        Err(Error::InvalidInput(_))
+    ));
+
+    fixture
+        .sdk
+        .respond_to_mcp_invocation(McpInvocationResponseParams::Success {
+            request_id: "invoke-3".into(),
+            result: None,
+        })
+        .await
+        .expect("respond without a result body");
+    let log = fs::read_to_string(&fixture.log_path).expect("request log");
+    let request = log
+        .lines()
+        .find(|line| line.contains(r#""requestId":"invoke-3""#))
+        .expect("success response request");
+    assert!(!request.contains(r#""result""#));
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }
