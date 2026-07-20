@@ -1,9 +1,10 @@
 #![cfg(unix)]
 
 use autohand_sdk::{
-    AutohandSdk, ChangesDecisionParams, Config, Error, GetHistoryParams, McpInputSchema,
-    McpInputSchemaType, McpInvocationResponseParams, McpSetVsCodeToolsParams, McpVsCodeTool,
-    SessionHistoryStatus, SessionLookupResult, YoloSetParams,
+    AutohandSdk, ChangesDecisionParams, Config, Error, GetHistoryParams, LearnRecommendParams,
+    LearningAuditStatus, McpInputSchema, McpInputSchemaType, McpInvocationResponseParams,
+    McpSetVsCodeToolsParams, McpVsCodeTool, SessionHistoryStatus, SessionLookupResult,
+    YoloSetParams,
 };
 use std::{fs, num::NonZeroU64, os::unix::fs::PermissionsExt, path::PathBuf};
 use tempfile::{tempdir, TempDir};
@@ -383,5 +384,23 @@ async fn responds_to_mcp_invocation_through_spawned_cli() {
         .find(|line| line.contains(r#""requestId":"invoke-3""#))
         .expect("success response request");
     assert!(!request.contains(r#""result""#));
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}
+
+#[tokio::test]
+async fn recommends_project_learning_through_spawned_cli() {
+    let mut fixture = CurrentCliFixture::start(
+        r#"{"success":true,"projectSummary":"Rust SDK","audit":[{"skill":"old","status":"outdated","reason":"stale"}],"recommendations":[{"slug":"rust-testing","score":0.95,"reason":"missing tests"}],"gapAnalysis":"Add integration coverage"}"#,
+        "",
+    )
+    .await;
+    let result = fixture
+        .sdk
+        .recommend_project_learning(LearnRecommendParams { deep: true })
+        .await
+        .expect("recommend project learning");
+    assert_eq!(result.audit[0].status, LearningAuditStatus::Outdated);
+    assert!(result.gap_analysis.is_some());
+    fixture.assert_request("autohand.learn.recommend", &[r#""deep":true"#]);
     fixture.sdk.stop().await.expect("stop fixture SDK");
 }

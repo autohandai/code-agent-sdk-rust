@@ -367,3 +367,51 @@ impl Serialize for McpInvocationResponseParams {
 pub struct McpInvocationResponseResult {
     pub success: bool,
 }
+
+/// Controls whether project learning recommendation performs a deeper scan.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LearnRecommendParams {
+    #[serde(default)]
+    pub deep: bool,
+}
+
+/// Existing-skill concern found during learning analysis.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LearningAuditStatus {
+    Redundant,
+    Outdated,
+    Conflicting,
+}
+
+/// One existing-skill concern.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningAuditEntry {
+    pub skill: String,
+    pub status: LearningAuditStatus,
+    pub reason: String,
+}
+
+/// Scored registry recommendation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningRecommendation {
+    pub slug: String,
+    pub score: f64,
+    pub reason: String,
+}
+
+/// Project learning analysis and registry recommendations.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LearnRecommendResult {
+    pub success: bool,
+    pub project_summary: String,
+    pub audit: Vec<LearningAuditEntry>,
+    pub recommendations: Vec<LearningRecommendation>,
+    pub gap_analysis: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}

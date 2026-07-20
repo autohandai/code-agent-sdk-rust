@@ -617,6 +617,14 @@ impl AutohandSdk {
             .await
     }
 
+    /// Audits project skills and returns scored registry recommendations.
+    pub async fn recommend_project_learning(
+        &self,
+        params: crate::LearnRecommendParams,
+    ) -> Result<crate::LearnRecommendResult> {
+        self.request_typed("autohand.learn.recommend", params).await
+    }
+
     fn inner(&self) -> Result<Arc<TransportInner>> {
         self.lifecycle
             .inner
