@@ -19,15 +19,16 @@ use tokio::{
 
 use crate::{
     config::PromptOptions, event::event_from_notification, AutomodePauseResult,
-    AutomodeStartParams, AutomodeStartResult, AutomodeStatusResult, AutoresearchCompareParams,
-    AutoresearchCompareResult, AutoresearchHistoryResult, AutoresearchParetoResult,
-    AutoresearchPinParams, AutoresearchPinResult, AutoresearchPruneParams, AutoresearchPruneResult,
-    AutoresearchReplayParams, AutoresearchReplayResult, AutoresearchRescoreParams,
-    AutoresearchRescoreResult, AutoresearchStartParams, AutoresearchStartResult,
-    AutoresearchStatusResult, AutoresearchStopResult, BrowserHandoffAttachParams,
-    BrowserHandoffAttachResult, BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config,
-    Error, GetSkillsRegistryParams, GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult,
-    GoalSnapshot, GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
+    AutomodeResumeResult, AutomodeStartParams, AutomodeStartResult, AutomodeStatusResult,
+    AutoresearchCompareParams, AutoresearchCompareResult, AutoresearchHistoryResult,
+    AutoresearchParetoResult, AutoresearchPinParams, AutoresearchPinResult,
+    AutoresearchPruneParams, AutoresearchPruneResult, AutoresearchReplayParams,
+    AutoresearchReplayResult, AutoresearchRescoreParams, AutoresearchRescoreResult,
+    AutoresearchStartParams, AutoresearchStartResult, AutoresearchStatusResult,
+    AutoresearchStopResult, BrowserHandoffAttachParams, BrowserHandoffAttachResult,
+    BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config, Error, GetSkillsRegistryParams,
+    GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult, GoalSnapshot,
+    GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
     McpGetServerConfigsResult, McpListServersResult, McpListToolsParams, McpListToolsResult,
     ResetResult, Result, SdkEvent,
 };
@@ -318,6 +319,12 @@ impl AutohandSdk {
     /// Pauses the active auto-mode session.
     pub async fn pause_automode(&self) -> Result<AutomodePauseResult> {
         self.request_typed("autohand.automode.pause", json!({}))
+            .await
+    }
+
+    /// Resumes a paused auto-mode session.
+    pub async fn resume_automode(&self) -> Result<AutomodeResumeResult> {
+        self.request_typed("autohand.automode.resume", json!({}))
             .await
     }
 

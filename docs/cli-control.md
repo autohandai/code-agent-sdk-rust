@@ -36,3 +36,8 @@ optional persisted state, iteration and file counters, branch, and checkpoint.
 
 Call `pause_automode()` to pause the active session. CLI business failures are
 returned as `AutomodePauseResult { success: false, error: Some(...) }`.
+
+## Resume Auto-Mode
+
+Call `resume_automode()` to continue a paused session. The result reports
+business success or an optional CLI error without converting it to transport failure.

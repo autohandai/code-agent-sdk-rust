@@ -3,10 +3,10 @@ use serde_json::Value;
 
 use crate::{
     json_output::{json_instruction, parse_json_as},
-    AutohandSdk, AutomodePauseResult, AutomodeStartParams, AutomodeStartResult,
-    AutomodeStatusResult, AutoresearchCompareParams, AutoresearchCompareResult,
-    AutoresearchHistoryResult, AutoresearchParetoResult, AutoresearchPinParams,
-    AutoresearchPinResult, AutoresearchPruneParams, AutoresearchPruneResult,
+    AutohandSdk, AutomodePauseResult, AutomodeResumeResult, AutomodeStartParams,
+    AutomodeStartResult, AutomodeStatusResult, AutoresearchCompareParams,
+    AutoresearchCompareResult, AutoresearchHistoryResult, AutoresearchParetoResult,
+    AutoresearchPinParams, AutoresearchPinResult, AutoresearchPruneParams, AutoresearchPruneResult,
     AutoresearchReplayParams, AutoresearchReplayResult, AutoresearchRescoreParams,
     AutoresearchRescoreResult, AutoresearchStartParams, AutoresearchStartResult,
     AutoresearchStatusResult, AutoresearchStopResult, BrowserHandoffAttachParams,
@@ -121,6 +121,11 @@ impl Agent {
     /// Pauses the active auto-mode session.
     pub async fn pause_automode(&self) -> Result<AutomodePauseResult> {
         self.sdk.pause_automode().await
+    }
+
+    /// Resumes a paused auto-mode session.
+    pub async fn resume_automode(&self) -> Result<AutomodeResumeResult> {
+        self.sdk.resume_automode().await
     }
 
     /// Starts a high-level slash-command run for an autoresearch objective.

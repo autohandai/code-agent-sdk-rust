@@ -226,3 +226,18 @@ async fn automode_pause_uses_empty_params_and_decodes_business_errors() {
     assert_eq!(request["method"], "autohand.automode.pause");
     assert_eq!(request["params"], serde_json::json!({}));
 }
+
+#[tokio::test]
+async fn automode_resume_uses_empty_params_and_decodes_success() {
+    let (_dir, log, sdk) = fixture(r#"{"success":true}"#).await;
+    let mut agent = Agent::from_sdk(sdk);
+
+    let result = agent.resume_automode().await.unwrap();
+    assert!(result.success);
+    assert_eq!(result.error, None);
+    agent.close().await.unwrap();
+
+    let request = sole_control_request(&log);
+    assert_eq!(request["method"], "autohand.automode.resume");
+    assert_eq!(request["params"], serde_json::json!({}));
+}
