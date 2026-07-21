@@ -32,6 +32,11 @@ impl SdkEvent {
         }
     }
 
+    /// Returns the exact JSON-RPC method for a first-class hook notification.
+    pub fn notification_method(&self) -> Option<&str> {
+        hook_type_to_method(&self.event_type)
+    }
+
     pub fn text_delta(&self) -> Option<&str> {
         self.raw.get("delta").and_then(Value::as_str)
     }
@@ -109,6 +114,69 @@ impl SdkEvent {
         (self.event_type == "hook_post_response").then(|| serde_json::from_value(self.raw.clone()))
     }
 
+    pub fn hook_file_modified(&self) -> Option<serde_json::Result<crate::HookFileModifiedEvent>> {
+        (self.event_type == "file_modified").then(|| serde_json::from_value(self.raw.clone()))
+    }
+
+    pub fn hook_session_error(&self) -> Option<serde_json::Result<crate::HookSessionErrorEvent>> {
+        (self.event_type == "hook_session_error").then(|| serde_json::from_value(self.raw.clone()))
+    }
+
+    pub fn hook_stop(&self) -> Option<serde_json::Result<crate::HookStopEvent>> {
+        (self.event_type == "hook_stop").then(|| serde_json::from_value(self.raw.clone()))
+    }
+
+    pub fn hook_session_start(&self) -> Option<serde_json::Result<crate::HookSessionStartEvent>> {
+        (self.event_type == "hook_session_start").then(|| serde_json::from_value(self.raw.clone()))
+    }
+
+    pub fn hook_session_end(&self) -> Option<serde_json::Result<crate::HookSessionEndEvent>> {
+        (self.event_type == "hook_session_end").then(|| serde_json::from_value(self.raw.clone()))
+    }
+
+    pub fn hook_subagent_stop(&self) -> Option<serde_json::Result<crate::HookSubagentStopEvent>> {
+        (self.event_type == "hook_subagent_stop").then(|| serde_json::from_value(self.raw.clone()))
+    }
+
+    pub fn hook_permission_request(
+        &self,
+    ) -> Option<serde_json::Result<crate::HookPermissionRequestEvent>> {
+        (self.event_type == "hook_permission_request")
+            .then(|| serde_json::from_value(self.raw.clone()))
+    }
+
+    pub fn hook_notification(&self) -> Option<serde_json::Result<crate::HookNotificationEvent>> {
+        (self.event_type == "hook_notification").then(|| serde_json::from_value(self.raw.clone()))
+    }
+
+    pub fn hook_context_compacted(
+        &self,
+    ) -> Option<serde_json::Result<crate::HookContextCompactedEvent>> {
+        (self.event_type == "hook_context_compacted")
+            .then(|| serde_json::from_value(self.raw.clone()))
+    }
+
+    pub fn hook_context_overflow(
+        &self,
+    ) -> Option<serde_json::Result<crate::HookContextOverflowEvent>> {
+        (self.event_type == "hook_context_overflow")
+            .then(|| serde_json::from_value(self.raw.clone()))
+    }
+
+    pub fn hook_context_warning(
+        &self,
+    ) -> Option<serde_json::Result<crate::HookContextWarningEvent>> {
+        (self.event_type == "hook_context_warning")
+            .then(|| serde_json::from_value(self.raw.clone()))
+    }
+
+    pub fn hook_context_critical(
+        &self,
+    ) -> Option<serde_json::Result<crate::HookContextCriticalEvent>> {
+        (self.event_type == "hook_context_critical")
+            .then(|| serde_json::from_value(self.raw.clone()))
+    }
+
     pub fn mcp_invocation_request(
         &self,
     ) -> Option<serde_json::Result<crate::McpInvocationRequestEvent>> {
@@ -157,12 +225,38 @@ pub(crate) fn event_from_notification(method: &str, mut params: Value) -> SdkEve
             _ => {}
         }
     }
-    let event_type = params
-        .get("type")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| method_to_type(method));
+    let event_type = if method.starts_with("autohand.hook.") {
+        method_to_type(method)
+    } else {
+        params
+            .get("type")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| method_to_type(method))
+    };
     SdkEvent::new(event_type, params)
+}
+
+fn hook_type_to_method(event_type: &str) -> Option<&'static str> {
+    match event_type {
+        "hook_pre_tool" => Some("autohand.hook.preTool"),
+        "hook_post_tool" => Some("autohand.hook.postTool"),
+        "file_modified" => Some("autohand.hook.fileModified"),
+        "hook_pre_prompt" => Some("autohand.hook.prePrompt"),
+        "hook_post_response" => Some("autohand.hook.postResponse"),
+        "hook_session_error" => Some("autohand.hook.sessionError"),
+        "hook_stop" => Some("autohand.hook.stop"),
+        "hook_session_start" => Some("autohand.hook.sessionStart"),
+        "hook_session_end" => Some("autohand.hook.sessionEnd"),
+        "hook_subagent_stop" => Some("autohand.hook.subagentStop"),
+        "hook_permission_request" => Some("autohand.hook.permissionRequest"),
+        "hook_notification" => Some("autohand.hook.notification"),
+        "hook_context_compacted" => Some("autohand.hook.contextCompacted"),
+        "hook_context_overflow" => Some("autohand.hook.contextOverflow"),
+        "hook_context_warning" => Some("autohand.hook.contextWarning"),
+        "hook_context_critical" => Some("autohand.hook.contextCritical"),
+        _ => None,
+    }
 }
 
 fn method_to_type(method: &str) -> String {
@@ -183,8 +277,20 @@ fn method_to_type(method: &str) -> String {
         "autohand.automode.error" => "automode_error",
         "autohand.hook.preTool" => "hook_pre_tool",
         "autohand.hook.postTool" => "hook_post_tool",
+        "autohand.hook.fileModified" => "file_modified",
         "autohand.hook.prePrompt" => "hook_pre_prompt",
         "autohand.hook.postResponse" => "hook_post_response",
+        "autohand.hook.sessionError" => "hook_session_error",
+        "autohand.hook.stop" => "hook_stop",
+        "autohand.hook.sessionStart" => "hook_session_start",
+        "autohand.hook.sessionEnd" => "hook_session_end",
+        "autohand.hook.subagentStop" => "hook_subagent_stop",
+        "autohand.hook.permissionRequest" => "hook_permission_request",
+        "autohand.hook.notification" => "hook_notification",
+        "autohand.hook.contextCompacted" => "hook_context_compacted",
+        "autohand.hook.contextOverflow" => "hook_context_overflow",
+        "autohand.hook.contextWarning" => "hook_context_warning",
+        "autohand.hook.contextCritical" => "hook_context_critical",
         "autohand.mcp.invokeRequest" => "mcp_invoke_request",
         "autohand.mcp.toolsChanged" => "mcp_tools_changed",
         "autohand.learn.progress" => "learn_progress",

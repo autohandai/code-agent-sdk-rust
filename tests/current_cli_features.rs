@@ -7,6 +7,7 @@ use autohand_sdk::{
     McpVsCodeTool, SessionHistoryStatus, SessionLookupResult, SkillGenerationScope,
     TokenUsageStatus, ToolRegistrySource, YoloSetParams,
 };
+use serde_json::{json, Value};
 use std::{fs, num::NonZeroU64, os::unix::fs::PermissionsExt, path::PathBuf};
 use tempfile::{tempdir, TempDir};
 
@@ -661,6 +662,302 @@ async fn streams_typed_post_response_hook_from_spawned_cli() {
         Some(TokenUsageStatus::Unavailable)
     );
     fixture.sdk.stop().await.expect("stop fixture SDK");
+}
+
+async fn receive_hook_event(
+    method: &str,
+    params: &Value,
+) -> (CurrentCliFixture, autohand_sdk::SdkEvent) {
+    let notification = json!({
+        "jsonrpc": "2.0",
+        "method": method,
+        "params": params,
+    })
+    .to_string();
+    let fixture = CurrentCliFixture::start(r#"{"success":true}"#, &notification).await;
+    let mut events = fixture
+        .sdk
+        .stream_prompt("emit", Default::default())
+        .await
+        .expect("start hook event stream");
+    let event = events
+        .recv()
+        .await
+        .expect("hook event")
+        .expect("raw hook event remains available");
+    (fixture, event)
+}
+
+fn assert_hook_decodes(event: &autohand_sdk::SdkEvent, method: &str) {
+    let decoded = match method {
+        "autohand.hook.preTool" => event.hook_pre_tool().expect("pre-tool hook").is_ok(),
+        "autohand.hook.postTool" => event.hook_post_tool().expect("post-tool hook").is_ok(),
+        "autohand.hook.fileModified" => event
+            .hook_file_modified()
+            .expect("file-modified hook")
+            .is_ok(),
+        "autohand.hook.prePrompt" => event.hook_pre_prompt().expect("pre-prompt hook").is_ok(),
+        "autohand.hook.postResponse" => event
+            .hook_post_response()
+            .expect("post-response hook")
+            .is_ok(),
+        "autohand.hook.sessionError" => event
+            .hook_session_error()
+            .expect("session-error hook")
+            .is_ok(),
+        "autohand.hook.stop" => event.hook_stop().expect("stop hook").is_ok(),
+        "autohand.hook.sessionStart" => event
+            .hook_session_start()
+            .expect("session-start hook")
+            .is_ok(),
+        "autohand.hook.sessionEnd" => event.hook_session_end().expect("session-end hook").is_ok(),
+        "autohand.hook.subagentStop" => event
+            .hook_subagent_stop()
+            .expect("subagent-stop hook")
+            .is_ok(),
+        "autohand.hook.permissionRequest" => event
+            .hook_permission_request()
+            .expect("permission-request hook")
+            .is_ok(),
+        "autohand.hook.notification" => event
+            .hook_notification()
+            .expect("notification hook")
+            .is_ok(),
+        "autohand.hook.contextCompacted" => event
+            .hook_context_compacted()
+            .expect("context-compacted hook")
+            .is_ok(),
+        "autohand.hook.contextOverflow" => event
+            .hook_context_overflow()
+            .expect("context-overflow hook")
+            .is_ok(),
+        "autohand.hook.contextWarning" => event
+            .hook_context_warning()
+            .expect("context-warning hook")
+            .is_ok(),
+        "autohand.hook.contextCritical" => event
+            .hook_context_critical()
+            .expect("context-critical hook")
+            .is_ok(),
+        _ => panic!("unhandled hook method {method}"),
+    };
+    assert!(decoded, "{method} should decode as its public hook type");
+}
+
+fn assert_hook_decode_fails(event: &autohand_sdk::SdkEvent, method: &str) {
+    let failed = match method {
+        "autohand.hook.preTool" => event.hook_pre_tool().expect("pre-tool hook").is_err(),
+        "autohand.hook.postTool" => event.hook_post_tool().expect("post-tool hook").is_err(),
+        "autohand.hook.fileModified" => event
+            .hook_file_modified()
+            .expect("file-modified hook")
+            .is_err(),
+        "autohand.hook.prePrompt" => event.hook_pre_prompt().expect("pre-prompt hook").is_err(),
+        "autohand.hook.postResponse" => event
+            .hook_post_response()
+            .expect("post-response hook")
+            .is_err(),
+        "autohand.hook.sessionError" => event
+            .hook_session_error()
+            .expect("session-error hook")
+            .is_err(),
+        "autohand.hook.stop" => event.hook_stop().expect("stop hook").is_err(),
+        "autohand.hook.sessionStart" => event
+            .hook_session_start()
+            .expect("session-start hook")
+            .is_err(),
+        "autohand.hook.sessionEnd" => event.hook_session_end().expect("session-end hook").is_err(),
+        "autohand.hook.subagentStop" => event
+            .hook_subagent_stop()
+            .expect("subagent-stop hook")
+            .is_err(),
+        "autohand.hook.permissionRequest" => event
+            .hook_permission_request()
+            .expect("permission-request hook")
+            .is_err(),
+        "autohand.hook.notification" => event
+            .hook_notification()
+            .expect("notification hook")
+            .is_err(),
+        "autohand.hook.contextCompacted" => event
+            .hook_context_compacted()
+            .expect("context-compacted hook")
+            .is_err(),
+        "autohand.hook.contextOverflow" => event
+            .hook_context_overflow()
+            .expect("context-overflow hook")
+            .is_err(),
+        "autohand.hook.contextWarning" => event
+            .hook_context_warning()
+            .expect("context-warning hook")
+            .is_err(),
+        "autohand.hook.contextCritical" => event
+            .hook_context_critical()
+            .expect("context-critical hook")
+            .is_err(),
+        _ => panic!("unhandled hook method {method}"),
+    };
+    assert!(failed, "{method} should reject the malformed payload");
+}
+
+#[tokio::test]
+async fn streams_all_hook_notifications_and_preserves_malformed_wire_payloads() {
+    let cases = [
+        (
+            "autohand.hook.preTool",
+            "hook_pre_tool",
+            json!({"toolId":"tool-1","toolName":"read_file","args":{"path":"README.md"},"timestamp":"t1"}),
+            json!({"toolId":"tool-1","toolName":"read_file","args":"README.md","timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.postTool",
+            "hook_post_tool",
+            json!({"toolId":"tool-1","toolName":"read_file","success":true,"duration":12.5,"output":"contents","timestamp":"t1"}),
+            json!({"toolId":"tool-1","toolName":"read_file","success":true,"duration":"fast","timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.fileModified",
+            "file_modified",
+            json!({"filePath":"src/lib.rs","changeType":"modify","toolId":"tool-1","timestamp":"t1"}),
+            json!({"filePath":"src/lib.rs","changeType":"rename","toolId":"tool-1","timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.prePrompt",
+            "hook_pre_prompt",
+            json!({"instruction":"Review the SDK","mentionedFiles":["lib.rs"],"timestamp":"t1"}),
+            json!({"instruction":"Review the SDK","mentionedFiles":"lib.rs","timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.postResponse",
+            "hook_post_response",
+            json!({"tokensUsed":900,"tokensUsageStatus":"actual","toolCallsCount":2,"duration":1250,"timestamp":"t1"}),
+            json!({"tokensUsed":900,"tokensUsageStatus":"estimated","toolCallsCount":2,"duration":1250,"timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.sessionError",
+            "hook_session_error",
+            json!({"error":"provider failed","code":"PROVIDER_ERROR","context":{"retryable":true},"timestamp":"t1"}),
+            json!({"error":{"message":"provider failed"},"timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.stop",
+            "hook_stop",
+            json!({"tokensUsed":42,"tokensUsageStatus":"actual","toolCallsCount":2,"duration":125,"timestamp":"t1"}),
+            json!({"tokensUsed":"42","tokensUsageStatus":"actual","toolCallsCount":2,"duration":125,"timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.sessionStart",
+            "hook_session_start",
+            json!({"sessionType":"resume","timestamp":"t1"}),
+            json!({"sessionType":"fork","timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.sessionEnd",
+            "hook_session_end",
+            json!({"reason":"quit","duration":250,"timestamp":"t1"}),
+            json!({"reason":"timeout","duration":250,"timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.subagentStop",
+            "hook_subagent_stop",
+            json!({"subagentId":"sub-1","subagentName":"reviewer","subagentType":"worker","success":true,"duration":75,"error":"none","timestamp":"t1"}),
+            json!({"subagentId":"sub-1","subagentName":"reviewer","subagentType":"worker","success":"yes","duration":75,"timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.permissionRequest",
+            "hook_permission_request",
+            json!({"tool":"write_file","path":"src/lib.rs","command":"write","args":{"force":false},"timestamp":"t1"}),
+            json!({"tool":"write_file","args":"force","timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.notification",
+            "hook_notification",
+            json!({"notificationType":"info","message":"Finished","timestamp":"t1"}),
+            json!({"notificationType":7,"message":"Finished","timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.contextCompacted",
+            "hook_context_compacted",
+            json!({"croppedCount":3,"summary":"Earlier turns","usagePercent":0.6125,"reason":"threshold","timestamp":"t1"}),
+            json!({"croppedCount":"3","usagePercent":0.6125,"reason":"threshold","timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.contextOverflow",
+            "hook_context_overflow",
+            json!({"tokensBefore":12000,"tokensAfter":8000,"croppedCount":4,"usagePercent":1.05,"timestamp":"t1"}),
+            json!({"tokensBefore":"12000","tokensAfter":8000,"croppedCount":4,"usagePercent":1.05,"timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.contextWarning",
+            "hook_context_warning",
+            json!({"usagePercent":0.805,"remainingTokens":4096,"timestamp":"t1"}),
+            json!({"usagePercent":-0.1,"remainingTokens":4096,"timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.contextCritical",
+            "hook_context_critical",
+            json!({"usagePercent":0.9575,"remainingTokens":1024,"timestamp":"t1"}),
+            json!({"usagePercent":0.9575,"remainingTokens":"1024","timestamp":"t1"}),
+        ),
+    ];
+
+    for (method, event_type, valid, malformed) in cases {
+        let (mut fixture, event) = receive_hook_event(method, &valid).await;
+        assert_eq!(event.event_type, event_type);
+        assert_eq!(event.notification_method(), Some(method));
+        assert_eq!(event.raw, valid);
+        assert_hook_decodes(&event, method);
+        fixture.sdk.stop().await.expect("stop valid hook fixture");
+
+        let (mut malformed_fixture, malformed_event) = receive_hook_event(method, &malformed).await;
+        assert_eq!(malformed_event.event_type, event_type);
+        assert_eq!(malformed_event.notification_method(), Some(method));
+        assert_eq!(malformed_event.raw, malformed);
+        assert_hook_decode_fails(&malformed_event, method);
+        malformed_fixture
+            .sdk
+            .stop()
+            .await
+            .expect("stop malformed hook fixture");
+    }
+}
+
+#[tokio::test]
+async fn context_hook_counters_reject_fractional_values() {
+    let cases = [
+        (
+            "autohand.hook.contextCompacted",
+            json!({"croppedCount":0.5,"usagePercent":0.6125,"reason":"threshold","timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.contextOverflow",
+            json!({"tokensBefore":12000.5,"tokensAfter":8000,"croppedCount":4,"usagePercent":1.05,"timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.contextOverflow",
+            json!({"tokensBefore":12000,"tokensAfter":8000.5,"croppedCount":4,"usagePercent":1.05,"timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.contextOverflow",
+            json!({"tokensBefore":12000,"tokensAfter":8000,"croppedCount":4.5,"usagePercent":1.05,"timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.contextWarning",
+            json!({"usagePercent":0.805,"remainingTokens":4096.5,"timestamp":"t1"}),
+        ),
+        (
+            "autohand.hook.contextCritical",
+            json!({"usagePercent":0.9575,"remainingTokens":1024.5,"timestamp":"t1"}),
+        ),
+    ];
+
+    for (method, malformed) in cases {
+        let (mut fixture, event) = receive_hook_event(method, &malformed).await;
+        assert_eq!(event.notification_method(), Some(method));
+        assert_eq!(event.raw, malformed);
+        assert_hook_decode_fails(&event, method);
+        fixture.sdk.stop().await.expect("stop hook fixture");
+    }
 }
 
 #[tokio::test]

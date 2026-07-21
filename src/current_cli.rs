@@ -591,6 +591,7 @@ pub struct HookPostToolEvent {
     pub tool_id: String,
     pub tool_name: String,
     pub success: bool,
+    #[serde(deserialize_with = "deserialize_non_negative_f64")]
     pub duration: f64,
     #[serde(default)]
     pub output: Option<String>,
@@ -614,8 +615,191 @@ pub struct HookPostResponseEvent {
     #[serde(default)]
     pub tokens_usage_status: Option<crate::TokenUsageStatus>,
     pub tool_calls_count: u64,
+    #[serde(deserialize_with = "deserialize_non_negative_f64")]
     pub duration: f64,
     pub timestamp: String,
+}
+
+/// File operation reported by the file-modified hook.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum HookFileChangeType {
+    Create,
+    Modify,
+    Delete,
+}
+
+/// Hook notification emitted when a tool changes a file.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookFileModifiedEvent {
+    pub file_path: String,
+    pub change_type: HookFileChangeType,
+    pub tool_id: String,
+    pub timestamp: String,
+}
+
+/// Backward-compatible name for the file-modified hook payload.
+pub type FileModifiedEvent = HookFileModifiedEvent;
+
+/// Token accounting status reported by stop and response hooks.
+pub type HookTokenUsageStatus = crate::TokenUsageStatus;
+
+/// Hook notification emitted when agent execution fails.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookSessionErrorEvent {
+    pub error: String,
+    #[serde(default)]
+    pub code: Option<String>,
+    #[serde(default)]
+    pub context: Option<serde_json::Map<String, Value>>,
+    pub timestamp: String,
+}
+
+/// Hook notification emitted when an agent turn stops.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookStopEvent {
+    pub tokens_used: u64,
+    #[serde(default)]
+    pub tokens_usage_status: Option<HookTokenUsageStatus>,
+    pub tool_calls_count: u64,
+    #[serde(deserialize_with = "deserialize_non_negative_f64")]
+    pub duration: f64,
+    pub timestamp: String,
+}
+
+/// How a hooked session began.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum HookSessionStartType {
+    Startup,
+    Resume,
+    Clear,
+}
+
+/// Hook notification emitted when a session begins.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookSessionStartEvent {
+    pub session_type: HookSessionStartType,
+    pub timestamp: String,
+}
+
+/// Why a hooked session ended.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum HookSessionEndReason {
+    Quit,
+    Clear,
+    Exit,
+    Error,
+}
+
+/// Hook notification emitted when a session ends.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookSessionEndEvent {
+    pub reason: HookSessionEndReason,
+    #[serde(deserialize_with = "deserialize_non_negative_f64")]
+    pub duration: f64,
+    pub timestamp: String,
+}
+
+/// Hook notification emitted when a subagent finishes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookSubagentStopEvent {
+    pub subagent_id: String,
+    pub subagent_name: String,
+    pub subagent_type: String,
+    pub success: bool,
+    #[serde(deserialize_with = "deserialize_non_negative_f64")]
+    pub duration: f64,
+    #[serde(default)]
+    pub error: Option<String>,
+    pub timestamp: String,
+}
+
+/// Hook notification emitted before a permission prompt is shown.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookPermissionRequestEvent {
+    pub tool: String,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub args: Option<serde_json::Map<String, Value>>,
+    pub timestamp: String,
+}
+
+/// Hook notification emitted when a user-facing notice is sent.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookNotificationEvent {
+    pub notification_type: String,
+    pub message: String,
+    pub timestamp: String,
+}
+
+/// Hook notification emitted after context compaction.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookContextCompactedEvent {
+    pub cropped_count: u64,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(deserialize_with = "deserialize_non_negative_f64")]
+    pub usage_percent: f64,
+    pub reason: String,
+    pub timestamp: String,
+}
+
+/// Hook notification emitted when context overflow is resolved.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookContextOverflowEvent {
+    pub tokens_before: u64,
+    pub tokens_after: u64,
+    pub cropped_count: u64,
+    #[serde(deserialize_with = "deserialize_non_negative_f64")]
+    pub usage_percent: f64,
+    pub timestamp: String,
+}
+
+/// Hook notification emitted at the context warning threshold.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookContextWarningEvent {
+    #[serde(deserialize_with = "deserialize_non_negative_f64")]
+    pub usage_percent: f64,
+    pub remaining_tokens: u64,
+    pub timestamp: String,
+}
+
+/// Hook notification emitted at the context critical threshold.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookContextCriticalEvent {
+    #[serde(deserialize_with = "deserialize_non_negative_f64")]
+    pub usage_percent: f64,
+    pub remaining_tokens: u64,
+    pub timestamp: String,
+}
+
+fn deserialize_non_negative_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = f64::deserialize(deserializer)?;
+    if value.is_finite() && value >= 0.0 {
+        Ok(value)
+    } else {
+        Err(D::Error::custom("expected a finite non-negative number"))
+    }
 }
 
 /// Request for the SDK client to execute a VS Code MCP tool.
