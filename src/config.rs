@@ -1,7 +1,71 @@
-use std::{collections::BTreeMap, path::PathBuf, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
+    time::Duration,
+};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+
+const RESTRICTED_MAX_EVENTS: usize = 256;
+const RESTRICTED_MAX_EVENT_BYTES: usize = 64 * 1024;
+const RESTRICTED_MAX_STDOUT_BYTES: usize = 1024 * 1024;
+const RESTRICTED_MAX_STDERR_BYTES: usize = 8 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClientContext {
+    Vscode,
+    Chrome,
+    Blueprint,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetupTrafficClass {
+    AutohandDeviceAuthorization,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChildNetworkPolicy {
+    Inherit,
+    DenyAll,
+    SetupOnly(SetupTrafficClass),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnswerOnlyProfile {
+    private: (),
+}
+
+impl AnswerOnlyProfile {
+    pub fn blueprint() -> Self {
+        Self { private: () }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SetupOnlyProfile {
+    traffic: SetupTrafficClass,
+}
+
+impl SetupOnlyProfile {
+    pub fn autohand_device_authorization() -> Self {
+        Self {
+            traffic: SetupTrafficClass::AutohandDeviceAuthorization,
+        }
+    }
+
+    pub fn traffic(&self) -> SetupTrafficClass {
+        self.traffic
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeProfile {
+    Interactive,
+    AnswerOnly(AnswerOnlyProfile),
+    SetupOnly(SetupOnlyProfile),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProviderName {
@@ -123,6 +187,14 @@ pub struct Config {
     pub features: Option<FeatureFlagSettings>,
     pub extra_args: Vec<String>,
     pub env: BTreeMap<String, String>,
+    pub runtime_profile: RuntimeProfile,
+    pub clear_environment: bool,
+    pub network_policy: ChildNetworkPolicy,
+    pub environment_allowlist: BTreeSet<String>,
+    pub max_events: usize,
+    pub max_event_bytes: usize,
+    pub max_stdout_bytes: usize,
+    pub max_stderr_bytes: usize,
 }
 
 impl Default for Config {
@@ -179,6 +251,14 @@ impl Default for Config {
             features: None,
             extra_args: Vec::new(),
             env: BTreeMap::new(),
+            runtime_profile: RuntimeProfile::Interactive,
+            clear_environment: false,
+            network_policy: ChildNetworkPolicy::Inherit,
+            environment_allowlist: BTreeSet::new(),
+            max_events: RESTRICTED_MAX_EVENTS,
+            max_event_bytes: RESTRICTED_MAX_EVENT_BYTES,
+            max_stdout_bytes: RESTRICTED_MAX_STDOUT_BYTES,
+            max_stderr_bytes: RESTRICTED_MAX_STDERR_BYTES,
         }
     }
 }
@@ -216,6 +296,25 @@ impl Config {
         self
     }
 
+    pub fn with_answer_only_profile(mut self, profile: AnswerOnlyProfile) -> Self {
+        self.runtime_profile = RuntimeProfile::AnswerOnly(profile);
+        self.clear_environment = true;
+        self.network_policy = ChildNetworkPolicy::DenyAll;
+        self
+    }
+
+    pub fn with_setup_only_profile(mut self, profile: SetupOnlyProfile) -> Self {
+        self.network_policy = ChildNetworkPolicy::SetupOnly(profile.traffic());
+        self.runtime_profile = RuntimeProfile::SetupOnly(profile);
+        self.clear_environment = true;
+        self
+    }
+
+    pub fn allow_environment(mut self, name: impl Into<String>) -> Self {
+        self.environment_allowlist.insert(name.into());
+        self
+    }
+
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = Some(model.into());
         self
@@ -237,6 +336,25 @@ impl Config {
 
     pub(crate) fn cli_args(&self) -> Vec<String> {
         let mut args = vec!["--mode".to_string(), "rpc".to_string()];
+        match self.runtime_profile {
+            RuntimeProfile::Interactive => {}
+            RuntimeProfile::AnswerOnly(_) => {
+                args.extend([
+                    "--answer-only".to_owned(),
+                    "--restricted".to_owned(),
+                    "--client-context".to_owned(),
+                    "blueprint".to_owned(),
+                ]);
+            }
+            RuntimeProfile::SetupOnly(_) => {
+                args.extend([
+                    "--setup-only".to_owned(),
+                    "--restricted".to_owned(),
+                    "--client-context".to_owned(),
+                    "blueprint".to_owned(),
+                ]);
+            }
+        }
         if let Some(cwd) = &self.cwd {
             args.push("--path".to_string());
             args.push(cwd.display().to_string());
@@ -370,12 +488,17 @@ impl Config {
             args.push("--add-dir".to_string());
             args.push(directory.display().to_string());
         }
-        args.extend(self.extra_args.iter().cloned());
+        if self.runtime_profile == RuntimeProfile::Interactive {
+            args.extend(self.extra_args.iter().cloned());
+        }
         args
     }
 
     pub(crate) fn cli_env(&self) -> BTreeMap<String, String> {
-        let mut env = BTreeMap::from([("AUTOHAND_STREAM_TOOL_OUTPUT".into(), "1".into())]);
+        let mut env = BTreeMap::new();
+        if self.runtime_profile == RuntimeProfile::Interactive {
+            env.insert("AUTOHAND_STREAM_TOOL_OUTPUT".into(), "1".into());
+        }
         if self.provider == Some(ProviderName::AutohandAi) {
             env.insert(
                 "AUTOHAND_AI_PLAN".into(),
@@ -393,6 +516,195 @@ impl Config {
         env.extend(self.env.clone());
         env
     }
+
+    pub(crate) fn inherited_environment(&self) -> BTreeMap<String, String> {
+        let mut names = self.environment_allowlist.clone();
+        if self.clear_environment {
+            for name in minimal_environment_names() {
+                names.insert((*name).to_owned());
+            }
+        }
+        names
+            .into_iter()
+            .filter_map(|name| std::env::var(&name).ok().map(|value| (name, value)))
+            .collect()
+    }
+
+    pub(crate) fn validate(&self) -> Result<(), String> {
+        match self.runtime_profile {
+            RuntimeProfile::Interactive => {
+                if self.network_policy != ChildNetworkPolicy::Inherit {
+                    return Err(
+                        "interactive profile requires ChildNetworkPolicy::Inherit".to_owned()
+                    );
+                }
+            }
+            RuntimeProfile::AnswerOnly(_) => {
+                if !self.clear_environment {
+                    return Err("answer-only profile must clear the child environment".to_owned());
+                }
+                if self.network_policy != ChildNetworkPolicy::DenyAll {
+                    return Err("answer-only profile requires deny-all child egress".to_owned());
+                }
+                self.validate_restricted_profile("answer-only")?;
+            }
+            RuntimeProfile::SetupOnly(profile) => {
+                if !self.clear_environment {
+                    return Err("setup-only profile must clear the child environment".to_owned());
+                }
+                if self.network_policy != ChildNetworkPolicy::SetupOnly(profile.traffic()) {
+                    return Err(
+                        "setup-only profile requires the device-authorization network policy"
+                            .to_owned(),
+                    );
+                }
+                self.validate_restricted_profile("setup-only")?;
+            }
+        }
+        if self.max_events == 0
+            || self.max_event_bytes == 0
+            || self.max_stdout_bytes == 0
+            || self.max_stderr_bytes == 0
+        {
+            return Err("output limits must all be greater than zero".to_owned());
+        }
+        Ok(())
+    }
+
+    fn validate_restricted_profile(&self, profile: &str) -> Result<(), String> {
+        if !self.extra_args.is_empty() {
+            return Err(format!("{profile} does not accept extra_args"));
+        }
+        if self.cwd.is_some()
+            || self.debug
+            || self.unrestricted
+            || self.bare
+            || self.idle_logout.is_some()
+            || self.auto_mode
+            || self.auto_skill
+            || self.auto_commit
+            || self.context_compact.is_some()
+            || self.persist_session
+            || self.session_id.is_some()
+            || self.resume
+            || self.continue_session
+            || self.fork
+            || self.session_path.is_some()
+            || self.auto_save_interval.is_some()
+            || self.agents_md.is_some()
+            || self.agents_md_create
+            || self.agents_md_path.is_some()
+            || self.agents_md_auto_update
+            || self.max_tokens.is_some()
+            || self.compression_threshold.is_some()
+            || self.summarization_threshold.is_some()
+            || self.max_iterations.is_some()
+            || self.max_runtime_minutes.is_some()
+            || self.max_cost.is_some()
+            || self.model.is_some()
+            || self.temperature.is_some()
+            || self.system_prompt.is_some()
+            || self.append_system_prompt.is_some()
+            || self.system_prompt_file.is_some()
+            || self.append_system_prompt_file.is_some()
+            || self.display_language.is_some()
+            || self.mcp_config.is_some()
+            || self.agents.is_some()
+            || self.plugin_dir.is_some()
+            || self.yolo.is_some()
+            || self.yolo_timeout_seconds.is_some()
+            || !self.additional_directories.is_empty()
+            || !self.skills.is_empty()
+            || !self.skill_sources.is_empty()
+            || self.install_missing_skills
+            || self.provider.is_some()
+            || self.api_key.is_some()
+            || self.base_url.is_some()
+            || self.autohand_ai_plan.is_some()
+            || self.features.is_some()
+            || !self.env.is_empty()
+        {
+            return Err(format!(
+                "{profile} accepts only its closed profile, CLI path, timeout, output limits, and explicit environment allowlist"
+            ));
+        }
+        if self.environment_allowlist.iter().any(|name| {
+            name.is_empty()
+                || !name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        }) {
+            return Err(format!(
+                "{profile} environment allowlist contains an invalid variable name"
+            ));
+        }
+        if let Some(name) = self
+            .environment_allowlist
+            .iter()
+            .find(|name| restricted_environment_name_is_forbidden(name))
+        {
+            return Err(format!(
+                "{profile} environment allowlist cannot restore behavior-changing variable {name}"
+            ));
+        }
+        if self.max_events > RESTRICTED_MAX_EVENTS
+            || self.max_event_bytes > RESTRICTED_MAX_EVENT_BYTES
+            || self.max_stdout_bytes > RESTRICTED_MAX_STDOUT_BYTES
+            || self.max_stderr_bytes > RESTRICTED_MAX_STDERR_BYTES
+        {
+            return Err(format!(
+                "{profile} output limits may be tightened but not relaxed"
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn restricted_environment_name_is_forbidden(name: &str) -> bool {
+    let name = name.to_ascii_uppercase();
+    name.starts_with("AUTOHAND_")
+        || matches!(
+            name.as_str(),
+            "ALL_PROXY"
+                | "HTTP_PROXY"
+                | "HTTPS_PROXY"
+                | "NO_PROXY"
+                | "BUN_OPTIONS"
+                | "NODE_OPTIONS"
+                | "NODE_EXTRA_CA_CERTS"
+                | "NODE_TLS_REJECT_UNAUTHORIZED"
+                | "SSL_CERT_DIR"
+                | "SSL_CERT_FILE"
+                | "SSLKEYLOGFILE"
+                | "CURL_CA_BUNDLE"
+                | "LD_PRELOAD"
+                | "LD_AUDIT"
+                | "LD_LIBRARY_PATH"
+                | "DYLD_INSERT_LIBRARIES"
+                | "DYLD_FRAMEWORK_PATH"
+                | "DYLD_FALLBACK_FRAMEWORK_PATH"
+                | "DYLD_FALLBACK_LIBRARY_PATH"
+                | "DYLD_LIBRARY_PATH"
+        )
+}
+
+#[cfg(unix)]
+fn minimal_environment_names() -> &'static [&'static str] {
+    &["HOME", "PATH", "TMPDIR"]
+}
+
+#[cfg(windows)]
+fn minimal_environment_names() -> &'static [&'static str] {
+    &[
+        "APPDATA",
+        "LOCALAPPDATA",
+        "PATH",
+        "SYSTEMROOT",
+        "TEMP",
+        "TMP",
+        "USERPROFILE",
+        "WINDIR",
+    ]
 }
 
 #[derive(Debug, Clone, Default)]

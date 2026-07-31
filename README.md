@@ -32,10 +32,14 @@ Use it when you want to embed Autohand inside a Rust service, developer tool, CL
 - Startup feature settings, typed turn usage, and AutohandAI environment support
 - Typed community-skill discovery/installation and MCP server/tool/configuration inspection
 - Transactional, clone-safe lifecycle state and deterministic sub-50 ms startup gates
+- A closed Blueprint answer-only profile with classified inputs, strict JSON
+  results, passive runtime facts, deny-all child egress, and bounded capture
+- A separate setup-only Autohand device-authorization profile that keeps
+  private transaction state inside an opaque SDK handle
 
 ## Requirements
 
-- Rust 1.80 or later
+- Rust 1.76 or later
 - Tokio runtime
 - Autohand CLI installed and authenticated
 - A configured provider in `~/.autohand/config.json`, or environment variables accepted by the CLI
@@ -192,6 +196,7 @@ measurement.
 - [Replayable Autoresearch](./docs/autoresearch.md)
 - [Conversation, Browser Handoff, And Auto-Mode Control](./docs/cli-control.md)
 - [Startup Performance](./docs/startup-performance.md)
+- [Blueprint Answer And Setup-Only Contracts](./docs/blueprint-answer.md)
 - [Contributing](./CONTRIBUTING.md)
 - [Security](./SECURITY.md)
 
@@ -204,6 +209,58 @@ cargo check --examples
 ```
 
 The transport tests use a deterministic fake CLI, so the unit suite does not require model credentials.
+
+The declared MSRV is proved through a separate consumer crate rather than the
+SDK's own dependency graph:
+
+```bash
+cargo +1.76 check --manifest-path tests/msrv-consumer/Cargo.toml --locked
+```
+
+## Blueprint Answer Contract
+
+Blueprint uses the typed answer-only profile and `run_answer`; it does not pass
+an untyped prompt to `run_json`:
+
+```rust
+use autohand_sdk::{
+    AnswerOnlyProfile, AutohandSdk, BlueprintArtifactClass,
+    ClassifiedAnswerEnvelope, ClassifiedArtifact, Config, StrictJsonSchema,
+    StructuredRunLimits,
+};
+
+let config = Config::default()
+    .with_cli_path("/reviewed/path/to/autohand")
+    .with_answer_only_profile(AnswerOnlyProfile::blueprint());
+let mut sdk = AutohandSdk::new(config);
+sdk.start().await?;
+
+let schema = StrictJsonSchema::new(serde_json::json!({
+    "type": "object",
+    "properties": { "answer": { "type": "string" } },
+    "required": ["answer"],
+    "additionalProperties": false
+}))?;
+let envelope = ClassifiedAnswerEnvelope::new(
+    "3b8f9ffb1c1962b70c60a86d3ebfe3c2422e677865057c1b8bc31e813c1db2ed",
+    vec![ClassifiedArtifact {
+        id: "evidence-1".into(),
+        class: BlueprintArtifactClass::SourceSnippet,
+        content: "fn authenticated() {}".into(),
+    }],
+    &schema,
+)?;
+let answer = sdk
+    .run_answer::<serde_json::Value>(
+        envelope,
+        schema,
+        StructuredRunLimits::default(),
+    )
+    .await?;
+```
+
+See [Blueprint answer and setup-only contracts](./docs/blueprint-answer.md)
+for the full security and lifecycle contract.
 
 ## Other SDKs
 

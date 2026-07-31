@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     process::Stdio,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex as StdMutex, Weak,
     },
     time::Duration,
@@ -11,27 +11,32 @@ use std::{
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, Command},
     sync::{broadcast, oneshot, Mutex},
     time,
 };
 
 use crate::{
-    config::PromptOptions, event::event_from_notification, AutomodeCancelParams,
-    AutomodeCancelResult, AutomodeGetLogParams, AutomodeGetLogResult, AutomodePauseResult,
-    AutomodeResumeResult, AutomodeStartParams, AutomodeStartResult, AutomodeStatusResult,
-    AutoresearchCompareParams, AutoresearchCompareResult, AutoresearchHistoryResult,
-    AutoresearchParetoResult, AutoresearchPinParams, AutoresearchPinResult,
-    AutoresearchPruneParams, AutoresearchPruneResult, AutoresearchReplayParams,
-    AutoresearchReplayResult, AutoresearchRescoreParams, AutoresearchRescoreResult,
-    AutoresearchStartParams, AutoresearchStartResult, AutoresearchStatusResult,
-    AutoresearchStopResult, BrowserHandoffAttachParams, BrowserHandoffAttachResult,
-    BrowserHandoffCreateParams, BrowserHandoffCreateResult, Config, Error, GetSkillsRegistryParams,
-    GetSkillsRegistryResult, GoalCreateParams, GoalMutationResult, GoalSnapshot,
-    GoalTemplateMetadata, GoalUpdateParams, InstallSkillParams, InstallSkillResult,
-    McpGetServerConfigsResult, McpListServersResult, McpListToolsParams, McpListToolsResult,
-    ResetResult, Result, SdkEvent,
+    blueprint::{decode_answer, AnswerRpcResult},
+    config::PromptOptions,
+    event::event_from_notification,
+    AutomodeCancelParams, AutomodeCancelResult, AutomodeGetLogParams, AutomodeGetLogResult,
+    AutomodePauseResult, AutomodeResumeResult, AutomodeStartParams, AutomodeStartResult,
+    AutomodeStatusResult, AutoresearchCompareParams, AutoresearchCompareResult,
+    AutoresearchHistoryResult, AutoresearchParetoResult, AutoresearchPinParams,
+    AutoresearchPinResult, AutoresearchPruneParams, AutoresearchPruneResult,
+    AutoresearchReplayParams, AutoresearchReplayResult, AutoresearchRescoreParams,
+    AutoresearchRescoreResult, AutoresearchStartParams, AutoresearchStartResult,
+    AutoresearchStatusResult, AutoresearchStopResult, BrowserHandoffAttachParams,
+    BrowserHandoffAttachResult, BrowserHandoffCreateParams, BrowserHandoffCreateResult,
+    ClassifiedAnswerEnvelope, Config, Error, GetSkillsRegistryParams, GetSkillsRegistryResult,
+    GoalCreateParams, GoalMutationResult, GoalSnapshot, GoalTemplateMetadata, GoalUpdateParams,
+    InstallSkillParams, InstallSkillResult, LoginChallenge, LoginChallengeWire, LoginProblem,
+    LoginProblemCode, LoginSession, LoginStatus, LoginStatusWire, McpGetServerConfigsResult,
+    McpListServersResult, McpListToolsParams, McpListToolsResult, ResetResult, Result,
+    RuntimeFacts, RuntimeProfile, SdkEvent, StrictJsonSchema, StructuredAnswerRun,
+    StructuredRunLimits, AUTOHAND_LOGIN_CONTRACT_VERSION,
 };
 
 #[derive(Clone)]
@@ -58,20 +63,34 @@ impl AutohandSdk {
             return Ok(());
         }
 
+        self.config.validate().map_err(Error::InvalidInput)?;
         let inner = TransportInner::start(self.config.clone()).await?;
-        let initialize = async {
-            inner.request("autohand.getState", json!({})).await?;
-            if let Some(features) = &self.config.features {
-                inner
-                    .request(
-                        "autohand.applyFlagSettings",
-                        json!({"settings":{"features":features}}),
-                    )
-                    .await?;
+        let initialize = match self.config.runtime_profile {
+            RuntimeProfile::Interactive => {
+                async {
+                    inner.request("autohand.getState", json!({})).await?;
+                    if let Some(features) = &self.config.features {
+                        inner
+                            .request(
+                                "autohand.applyFlagSettings",
+                                json!({"settings":{"features":features}}),
+                            )
+                            .await?;
+                    }
+                    Ok(())
+                }
+                .await
             }
-            Ok(())
-        }
-        .await;
+            RuntimeProfile::AnswerOnly(_) => {
+                async {
+                    let value = inner.request("autohand.runtimeInspect", json!({})).await?;
+                    let facts: RuntimeFacts = serde_json::from_value(value)?;
+                    facts.validate_answer_only()
+                }
+                .await
+            }
+            RuntimeProfile::SetupOnly(_) => Ok(()),
+        };
         if let Err(error) = initialize {
             let _ = inner.stop().await;
             return Err(error);
@@ -99,6 +118,43 @@ impl AutohandSdk {
         Ok(())
     }
 
+    pub(crate) async fn abort_process_tree(&self) -> Result<()> {
+        let inner = self
+            .lifecycle
+            .inner
+            .lock()
+            .map_err(|_| Error::LifecyclePoisoned)?
+            .take();
+        if let Some(inner) = inner {
+            inner.terminate().await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn abort_process_tree_now(&self) {
+        if let Ok(mut lifecycle) = self.lifecycle.inner.lock() {
+            if let Some(inner) = lifecycle.take() {
+                inner.process_tree.terminate_now();
+                inner.fail_pending();
+            }
+        }
+    }
+
+    pub(crate) fn event_limits(&self) -> (usize, usize) {
+        (self.config.max_events, self.config.max_event_bytes)
+    }
+
+    fn validate_login_session(&self, session: &LoginSession) -> Result<()> {
+        if !matches!(self.config.runtime_profile, RuntimeProfile::SetupOnly(_))
+            || !Arc::ptr_eq(&self.lifecycle, &session.sdk.lifecycle)
+        {
+            return Err(Error::InvalidInput(
+                "login session belongs to a different setup-only SDK process".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
     pub fn is_started(&self) -> bool {
         self.lifecycle
             .inner
@@ -108,7 +164,115 @@ impl AutohandSdk {
     }
 
     pub async fn request(&self, method: &str, params: Value) -> Result<Value> {
+        if !rpc_method_allowed(self.config.runtime_profile, method) {
+            return Err(Error::ProfileViolation {
+                profile: profile_name(self.config.runtime_profile),
+                method: method.to_owned(),
+            });
+        }
         self.inner()?.request(method, params).await
+    }
+
+    pub async fn runtime_facts(&self) -> Result<RuntimeFacts> {
+        let facts: RuntimeFacts = self
+            .request_typed("autohand.runtimeInspect", json!({}))
+            .await?;
+        if matches!(self.config.runtime_profile, RuntimeProfile::AnswerOnly(_)) {
+            facts.validate_answer_only()?;
+        }
+        Ok(facts)
+    }
+
+    pub async fn run_answer<T: DeserializeOwned>(
+        &self,
+        envelope: ClassifiedAnswerEnvelope,
+        schema: StrictJsonSchema,
+        limits: StructuredRunLimits,
+    ) -> Result<StructuredAnswerRun<T>> {
+        if !matches!(self.config.runtime_profile, RuntimeProfile::AnswerOnly(_)) {
+            return Err(Error::ProfileViolation {
+                profile: profile_name(self.config.runtime_profile),
+                method: "autohand.answer".to_owned(),
+            });
+        }
+        limits.validate()?;
+        envelope.validate()?;
+        if envelope.output_schema != *schema.as_value() {
+            return Err(Error::InvalidInput(
+                "envelope outputSchema does not match the supplied strict schema".to_owned(),
+            ));
+        }
+        let encoded = serde_json::to_vec(&envelope)?;
+        if encoded.len() > limits.max_input_bytes {
+            return Err(Error::OutputLimitExceeded {
+                stream: "classified answer input",
+                limit: limits.max_input_bytes,
+            });
+        }
+        let runtime_facts = self.runtime_facts().await?;
+        runtime_facts.validate_answer_destination()?;
+        let response: AnswerRpcResult = self.request_typed("autohand.answer", envelope).await?;
+        decode_answer(response, runtime_facts, &schema, limits)
+    }
+
+    pub async fn begin_autohand_login(&self) -> Result<LoginChallenge> {
+        if !matches!(self.config.runtime_profile, RuntimeProfile::SetupOnly(_)) {
+            return Err(Error::ProfileViolation {
+                profile: profile_name(self.config.runtime_profile),
+                method: "autohand.login.begin".to_owned(),
+            });
+        }
+        let challenge: LoginChallengeWire = self
+            .request_typed(
+                "autohand.login.begin",
+                json!({
+                    "contractVersion": AUTOHAND_LOGIN_CONTRACT_VERSION,
+                    "trafficClass": "autohand_device_authorization",
+                }),
+            )
+            .await?;
+        challenge.validate(self.clone())
+    }
+
+    pub async fn poll_autohand_login(&self, session: &LoginSession) -> Result<LoginStatus> {
+        self.validate_login_session(session)?;
+        let status: LoginStatusWire = self
+            .request_typed(
+                "autohand.login.poll",
+                json!({
+                    "contractVersion": AUTOHAND_LOGIN_CONTRACT_VERSION,
+                    "sessionId": session.id,
+                }),
+            )
+            .await?;
+        let status = status.validate()?;
+        if !matches!(status, LoginStatus::Pending { .. }) {
+            session.finish();
+        }
+        Ok(status)
+    }
+
+    pub async fn cancel_autohand_login(&self, session: LoginSession) -> Result<()> {
+        self.validate_login_session(&session)?;
+        let status: LoginStatusWire = self
+            .request_typed(
+                "autohand.login.cancel",
+                json!({
+                    "contractVersion": AUTOHAND_LOGIN_CONTRACT_VERSION,
+                    "sessionId": session.id,
+                }),
+            )
+            .await?;
+        match status.validate()? {
+            LoginStatus::Cancelled => {
+                session.finish();
+                Ok(())
+            }
+            LoginStatus::Failed { problem } => Err(Error::LoginFailed { problem }),
+            _ => Err(Error::Protocol(
+                "login cancellation did not return terminal cancelled status".to_owned(),
+            )),
+        }
     }
 
     pub async fn prompt(
@@ -185,16 +349,26 @@ impl AutohandSdk {
         message: impl Into<String>,
         options: PromptOptions,
     ) -> Result<tokio::sync::mpsc::Receiver<Result<SdkEvent>>> {
+        if !rpc_method_allowed(self.config.runtime_profile, "autohand.prompt") {
+            return Err(Error::ProfileViolation {
+                profile: profile_name(self.config.runtime_profile),
+                method: "autohand.prompt".to_owned(),
+            });
+        }
         let inner = self.inner()?.clone();
         let mut events = inner.events.subscribe();
         let (tx, rx) = tokio::sync::mpsc::channel(256);
         let params = options.to_params(message);
+        let terminal_grace_duration = inner.config.timeout.min(Duration::from_secs(1));
 
         tokio::spawn(async move {
             let request = inner.request("autohand.prompt", params);
             tokio::pin!(request);
             let mut request_done = false;
             let mut stream_done = false;
+            let mut failure_grace_active = false;
+            let failure_grace = time::sleep(terminal_grace_duration);
+            tokio::pin!(failure_grace);
             loop {
                 tokio::select! {
                     biased;
@@ -204,9 +378,16 @@ impl AutohandSdk {
                     event = events.recv() => {
                         match event {
                             Ok(event) => {
-                                let terminal = is_terminal_stream_event(&event);
+                                let terminal = is_final_stream_event(&event);
+                                let failure = event.event_type == "error";
                                 if tx.send(Ok(event)).await.is_err() {
                                     break;
+                                }
+                                if failure {
+                                    failure_grace.as_mut().reset(
+                                        time::Instant::now() + terminal_grace_duration
+                                    );
+                                    failure_grace_active = true;
                                 }
                                 if terminal {
                                     stream_done = true;
@@ -215,13 +396,24 @@ impl AutohandSdk {
                                     }
                                 }
                             }
-                            Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                            Err(broadcast::error::RecvError::Lagged(count)) => {
+                                inner.process_tree.terminate_now();
+                                let _ = tx.send(Err(Error::EventStreamLagged { count })).await;
+                                break;
+                            }
                             Err(broadcast::error::RecvError::Closed) => {
                                 if !stream_done {
                                     let _ = tx.send(Err(Error::ChannelClosed)).await;
                                 }
                                 break;
                             }
+                        }
+                    }
+                    _ = &mut failure_grace, if failure_grace_active => {
+                        stream_done = true;
+                        failure_grace_active = false;
+                        if request_done {
+                            break;
                         }
                     }
                     result = &mut request, if !request_done => {
@@ -231,12 +423,19 @@ impl AutohandSdk {
                         }
                         request_done = true;
                         while let Ok(event) = events.try_recv() {
-                            let terminal = is_terminal_stream_event(&event);
+                            let terminal = is_final_stream_event(&event);
+                            let failure = event.event_type == "error";
                             if tx.send(Ok(event)).await.is_err() {
                                 break;
                             }
                             if terminal {
                                 stream_done = true;
+                            }
+                            if failure {
+                                failure_grace.as_mut().reset(
+                                    time::Instant::now() + terminal_grace_duration
+                                );
+                                failure_grace_active = true;
                             }
                         }
                         if stream_done {
@@ -670,8 +869,8 @@ impl AutohandSdk {
     }
 }
 
-fn is_terminal_stream_event(event: &SdkEvent) -> bool {
-    matches!(event.event_type.as_str(), "agent_end" | "error")
+fn is_final_stream_event(event: &SdkEvent) -> bool {
+    matches!(event.event_type.as_str(), "agent_end" | "transport_closed")
 }
 
 struct TransportInner {
@@ -679,8 +878,100 @@ struct TransportInner {
     child: Mutex<Child>,
     stdin: Mutex<Option<ChildStdin>>,
     pending: StdMutex<HashMap<u64, oneshot::Sender<Result<Value>>>>,
+    startup_failure: StdMutex<Option<StartupFailure>>,
     next_id: AtomicU64,
     events: broadcast::Sender<SdkEvent>,
+    process_tree: ProcessTree,
+}
+
+#[derive(Debug, Clone)]
+enum StartupFailure {
+    AuthenticationRequired {
+        code: i64,
+        message: String,
+        retryable: bool,
+        provider_id: Option<String>,
+    },
+    InitializationFailed {
+        code: i64,
+        message: String,
+        stage: String,
+        retryable: bool,
+    },
+    Protocol {
+        message: String,
+    },
+}
+
+impl StartupFailure {
+    fn from_rpc(error: &Value) -> Option<Self> {
+        let code = error.get("code").and_then(Value::as_i64).unwrap_or(0);
+        let message = error
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("Autohand CLI startup failed")
+            .to_owned();
+        let data = error.get("data");
+        let kind = data
+            .and_then(|value| value.get("kind"))
+            .and_then(Value::as_str);
+        let retryable = data
+            .and_then(|value| value.get("retryable"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if code == -32011 || kind == Some("authentication_required") {
+            return Some(Self::AuthenticationRequired {
+                code,
+                message,
+                retryable,
+                provider_id: data
+                    .and_then(|value| value.get("providerId"))
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned),
+            });
+        }
+        if code != -32010 && kind != Some("initialization_failed") {
+            return None;
+        }
+        Some(Self::InitializationFailed {
+            code,
+            message,
+            stage: data
+                .and_then(|value| value.get("stage"))
+                .and_then(Value::as_str)
+                .unwrap_or("startup")
+                .to_owned(),
+            retryable,
+        })
+    }
+
+    fn to_error(&self) -> Error {
+        match self {
+            Self::AuthenticationRequired {
+                code,
+                message,
+                retryable,
+                provider_id,
+            } => Error::AuthenticationRequired {
+                code: *code,
+                message: message.clone(),
+                retryable: *retryable,
+                provider_id: provider_id.clone(),
+            },
+            Self::InitializationFailed {
+                code,
+                message,
+                stage,
+                retryable,
+            } => Error::InitializationFailed {
+                code: *code,
+                message: message.clone(),
+                stage: stage.clone(),
+                retryable: *retryable,
+            },
+            Self::Protocol { message } => Error::Protocol(message.clone()),
+        }
+    }
 }
 
 struct PendingRequestGuard<'a> {
@@ -704,21 +995,39 @@ impl TransportInner {
             .clone()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "autohand".to_string());
-        let mut command = Command::new(cli);
-        command.args(config.cli_args());
-        if let Some(cwd) = &config.cwd {
-            command.current_dir(cwd);
+        let mut command = command_for_network_policy(&config, &cli)?;
+        match config.runtime_profile {
+            RuntimeProfile::Interactive => {
+                if let Some(cwd) = &config.cwd {
+                    command.current_dir(cwd);
+                }
+            }
+            RuntimeProfile::AnswerOnly(_) | RuntimeProfile::SetupOnly(_) => {
+                command.current_dir(std::env::temp_dir());
+            }
         }
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        if config.clear_environment {
+            command.env_clear();
+            for (key, value) in config.inherited_environment() {
+                command.env(key, value);
+            }
+        }
         for (key, value) in config.cli_env() {
             command.env(key, value);
         }
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.as_std_mut().process_group(0);
+        }
 
         let mut child = command.spawn()?;
+        let process_tree = ProcessTree::attach(&child)?;
         let stdin = child.stdin.take().ok_or_else(|| {
             Error::Io(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
@@ -738,12 +1047,23 @@ impl TransportInner {
             child: Mutex::new(child),
             stdin: Mutex::new(Some(stdin)),
             pending: StdMutex::new(HashMap::new()),
+            startup_failure: StdMutex::new(None),
             next_id: AtomicU64::new(1),
             events,
+            process_tree,
         });
-        Self::spawn_stdout_reader(Arc::downgrade(&inner), stdout);
+        Self::spawn_stdout_reader(
+            Arc::downgrade(&inner),
+            stdout,
+            inner.config.max_stdout_bytes,
+        );
         if let Some(stderr) = stderr {
-            Self::spawn_stderr_reader(inner.config.debug, stderr);
+            Self::spawn_stderr_reader(
+                Arc::downgrade(&inner),
+                stderr,
+                inner.config.max_stderr_bytes,
+                inner.config.debug,
+            );
         }
         Ok(inner)
     }
@@ -759,9 +1079,12 @@ impl TransportInner {
         let mut child = self.child.lock().await;
         if child.id().is_some() {
             match time::timeout(Duration::from_secs(5), child.wait()).await {
-                Ok(Ok(_status)) => {}
+                Ok(Ok(_status)) => {
+                    self.process_tree.terminate_now();
+                }
                 Ok(Err(error)) => return Err(Error::Io(error)),
                 Err(_) => {
+                    self.process_tree.terminate_now();
                     let _ = child.kill().await;
                     let _ = child.wait().await;
                 }
@@ -772,7 +1095,30 @@ impl TransportInner {
         Ok(())
     }
 
+    async fn terminate(&self) -> Result<()> {
+        self.process_tree.terminate_now();
+        {
+            let mut stdin = self.stdin.lock().await;
+            stdin.take();
+        }
+        let mut child = self.child.lock().await;
+        if child.id().is_some() {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+        }
+        self.fail_pending();
+        Ok(())
+    }
+
     async fn request(&self, method: &str, params: Value) -> Result<Value> {
+        if let Some(failure) = self
+            .startup_failure
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+        {
+            return Err(failure.to_error());
+        }
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let message = json!({
             "jsonrpc": "2.0",
@@ -805,36 +1151,123 @@ impl TransportInner {
         match time::timeout(self.config.timeout, rx).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err(Error::ChannelClosed),
-            Err(_) => Err(Error::RequestTimeout(method.to_string())),
+            Err(_) => {
+                self.process_tree.terminate_now();
+                self.fail_pending();
+                Err(Error::RequestTimeout(method.to_string()))
+            }
         }
     }
 
-    fn spawn_stdout_reader(inner: Weak<Self>, stdout: tokio::process::ChildStdout) {
+    fn spawn_stdout_reader(
+        inner: Weak<Self>,
+        stdout: tokio::process::ChildStdout,
+        max_stdout_bytes: usize,
+    ) {
         tokio::spawn(async move {
-            let mut lines = BufReader::new(stdout).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
+            let mut reader = BufReader::new(stdout);
+            let mut stdout_bytes = 0;
+            loop {
+                let line =
+                    read_bounded_line(&mut reader, &mut stdout_bytes, max_stdout_bytes, "stdout")
+                        .await;
                 let Some(inner) = inner.upgrade() else {
                     return;
                 };
-                if let Err(error) = inner.handle_line(&line) {
-                    let _ = inner.events.send(SdkEvent::new(
-                        "error",
-                        json!({ "type": "error", "message": error.to_string() }),
-                    ));
+                match line {
+                    Ok(Some(line)) => {
+                        if let Err(error) = inner.handle_line(&line) {
+                            let message = match error {
+                                Error::Protocol(message) => message,
+                                Error::Json(error) => {
+                                    format!("stdout JSON frame was invalid: {error}")
+                                }
+                                error => error.to_string(),
+                            };
+                            let _ = inner.events.send(SdkEvent::new(
+                                "error",
+                                json!({ "type": "error", "message": message }),
+                            ));
+                            inner.process_tree.terminate_now();
+                            inner.fail_pending_with(|| Error::Protocol(message.clone()));
+                            return;
+                        }
+                    }
+                    Ok(None) => break,
+                    Err(error) => {
+                        let message = match &error {
+                            Error::Protocol(message) => message.clone(),
+                            Error::Io(error) => format!("stdout read failed: {error}"),
+                            error => error.to_string(),
+                        };
+                        let _ = inner.events.send(SdkEvent::new(
+                            "error",
+                            json!({ "type": "error", "message": message }),
+                        ));
+                        inner.process_tree.terminate_now();
+                        if matches!(error, Error::OutputLimitExceeded { .. }) {
+                            inner.fail_pending_with(|| Error::OutputLimitExceeded {
+                                stream: "stdout",
+                                limit: max_stdout_bytes,
+                            });
+                        } else {
+                            inner.fail_pending_with(|| Error::Protocol(message.clone()));
+                        }
+                        return;
+                    }
                 }
             }
             if let Some(inner) = inner.upgrade() {
+                inner.process_tree.terminate_now();
+                let _ = inner.events.send(SdkEvent::new(
+                    "transport_closed",
+                    json!({ "type": "transport_closed" }),
+                ));
                 inner.fail_pending();
             }
         });
     }
 
-    fn spawn_stderr_reader(debug: bool, stderr: tokio::process::ChildStderr) {
+    fn spawn_stderr_reader(
+        inner: Weak<Self>,
+        stderr: tokio::process::ChildStderr,
+        max_stderr_bytes: usize,
+        debug: bool,
+    ) {
         tokio::spawn(async move {
-            let mut lines = BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                if debug {
-                    eprintln!("[autohand] {line}");
+            let mut reader = BufReader::new(stderr);
+            let mut stderr_bytes = 0;
+            loop {
+                let line =
+                    read_bounded_line(&mut reader, &mut stderr_bytes, max_stderr_bytes, "stderr")
+                        .await;
+                let Some(inner) = inner.upgrade() else {
+                    return;
+                };
+                match line {
+                    Ok(Some(line)) => {
+                        if debug {
+                            eprintln!("[autohand] {line}");
+                        }
+                    }
+                    Ok(None) => return,
+                    Err(error) => {
+                        inner.process_tree.terminate_now();
+                        if matches!(error, Error::OutputLimitExceeded { .. }) {
+                            inner.fail_pending_with(|| Error::OutputLimitExceeded {
+                                stream: "stderr",
+                                limit: max_stderr_bytes,
+                            });
+                        } else {
+                            let message = match error {
+                                Error::Protocol(message) => message,
+                                Error::Io(error) => format!("stderr read failed: {error}"),
+                                error => error.to_string(),
+                            };
+                            inner.fail_pending_with(|| Error::Protocol(message.clone()));
+                        }
+                        return;
+                    }
                 }
             }
         });
@@ -852,9 +1285,82 @@ impl TransportInner {
         }
     }
 
+    fn fail_pending_with(&self, mut error: impl FnMut() -> Error) {
+        let pending = std::mem::take(
+            &mut *self
+                .pending
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        );
+        for (_, response) in pending {
+            let _ = response.send(Err(error()));
+        }
+    }
+
     fn handle_line(&self, line: &str) -> Result<()> {
         let value: Value = serde_json::from_str(line)?;
-        if let Some(id) = value.get("id").and_then(Value::as_u64) {
+        let object = value
+            .as_object()
+            .ok_or_else(|| Error::Protocol("JSON-RPC frame must be one object".to_owned()))?;
+        if object.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
+            return Err(Error::Protocol(
+                "JSON-RPC frame omitted exact version 2.0".to_owned(),
+            ));
+        }
+        if value.get("id") == Some(&Value::Null) {
+            if object.contains_key("result") && object.contains_key("error") {
+                return Err(Error::Protocol(
+                    "JSON-RPC response cannot contain both result and error".to_owned(),
+                ));
+            }
+            let failure = if matches!(self.config.runtime_profile, RuntimeProfile::SetupOnly(_)) {
+                StartupFailure::Protocol {
+                    message:
+                        "setup-only CLI emitted an unbound error outside login contract version 1"
+                            .to_owned(),
+                }
+            } else if let Some(error) = value.get("error") {
+                let code = error.get("code").and_then(Value::as_i64).unwrap_or(0);
+                let message = error
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown unbound RPC error");
+                StartupFailure::from_rpc(error).unwrap_or_else(|| StartupFailure::Protocol {
+                    message: format!("unbound RPC error {code}: {message}"),
+                })
+            } else {
+                StartupFailure::Protocol {
+                    message: "JSON-RPC response used a null id without an error".to_owned(),
+                }
+            };
+            let terminate = matches!(failure, StartupFailure::Protocol { .. });
+            *self
+                .startup_failure
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(failure.clone());
+            let pending = std::mem::take(
+                &mut *self
+                    .pending
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()),
+            );
+            for (_, response) in pending {
+                let _ = response.send(Err(failure.to_error()));
+            }
+            if terminate {
+                self.process_tree.terminate_now();
+            }
+            return Ok(());
+        }
+        if let Some(id_value) = value.get("id") {
+            let id = id_value.as_u64().ok_or_else(|| {
+                Error::Protocol("JSON-RPC response id must be an unsigned integer".to_owned())
+            })?;
+            if object.contains_key("result") == object.contains_key("error") {
+                return Err(Error::Protocol(
+                    "JSON-RPC response requires exactly one of result or error".to_owned(),
+                ));
+            }
             if let Some(tx) = self
                 .pending
                 .lock()
@@ -862,18 +1368,7 @@ impl TransportInner {
                 .remove(&id)
             {
                 if let Some(error) = value.get("error") {
-                    let code = error.get("code").and_then(Value::as_i64).unwrap_or(0);
-                    let message = error
-                        .get("message")
-                        .and_then(Value::as_str)
-                        .unwrap_or("Unknown RPC error")
-                        .to_string();
-                    let data = error.get("data").cloned();
-                    let _ = tx.send(Err(Error::Rpc {
-                        code,
-                        message,
-                        data,
-                    }));
+                    let _ = tx.send(Err(rpc_error(error, self.config.runtime_profile)));
                 } else {
                     let _ = tx.send(Ok(value.get("result").cloned().unwrap_or(Value::Null)));
                 }
@@ -882,14 +1377,308 @@ impl TransportInner {
         }
 
         if let Some(method) = value.get("method").and_then(Value::as_str) {
+            if object.contains_key("result") || object.contains_key("error") {
+                return Err(Error::Protocol(
+                    "JSON-RPC notification cannot contain result or error".to_owned(),
+                ));
+            }
             let params = value.get("params").cloned().unwrap_or(Value::Null);
             let _ = self.events.send(event_from_notification(method, params));
+            return Ok(());
         }
-        Ok(())
+        Err(Error::Protocol(
+            "JSON-RPC frame was neither a response nor a notification".to_owned(),
+        ))
     }
 }
 
-#[cfg(test)]
+fn rpc_error(error: &Value, profile: RuntimeProfile) -> Error {
+    let code = error.get("code").and_then(Value::as_i64).unwrap_or(0);
+    let message = error
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or("Unknown RPC error")
+        .to_owned();
+    let data = error.get("data");
+    let kind = data
+        .and_then(|value| value.get("kind"))
+        .and_then(Value::as_str);
+    if matches!(profile, RuntimeProfile::SetupOnly(_)) {
+        if let Some(problem_code) = kind.and_then(LoginProblemCode::from_rpc_kind) {
+            return match LoginProblem::from_rpc(
+                problem_code,
+                message,
+                data.and_then(|value| value.get("retryable"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            ) {
+                Ok(problem) => Error::LoginFailed { problem },
+                Err(_) => Error::Protocol(
+                    "Autohand login failure contained unsafe public fields".to_owned(),
+                ),
+            };
+        }
+        return Error::LoginFailed {
+            problem: LoginProblem {
+                code: LoginProblemCode::ProtocolMismatch,
+                message:
+                    "The Autohand authorization response did not match setup contract version 1."
+                        .to_owned(),
+                retryable: false,
+            },
+        };
+    }
+    if code == -32011 || kind == Some("authentication_required") {
+        return Error::AuthenticationRequired {
+            code,
+            message,
+            retryable: data
+                .and_then(|value| value.get("retryable"))
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            provider_id: data
+                .and_then(|value| value.get("providerId"))
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned),
+        };
+    }
+    Error::Rpc {
+        code,
+        message,
+        data: data.cloned(),
+    }
+}
+
+impl Drop for TransportInner {
+    fn drop(&mut self) {
+        self.process_tree.terminate_now();
+    }
+}
+
+async fn read_bounded_line<R>(
+    reader: &mut R,
+    total: &mut usize,
+    limit: usize,
+    stream: &'static str,
+) -> Result<Option<String>>
+where
+    R: AsyncBufRead + Unpin,
+{
+    let mut line = Vec::new();
+    loop {
+        let available = reader.fill_buf().await?;
+        if available.is_empty() {
+            if line.is_empty() {
+                return Ok(None);
+            }
+            break;
+        }
+        let newline = available.iter().position(|byte| *byte == b'\n');
+        let consumed = newline.map_or(available.len(), |index| index + 1);
+        if total
+            .checked_add(consumed)
+            .map_or(true, |observed| observed > limit)
+        {
+            reader.consume(consumed);
+            return Err(Error::OutputLimitExceeded { stream, limit });
+        }
+        *total += consumed;
+        let content_end = newline.unwrap_or(consumed);
+        line.extend_from_slice(&available[..content_end]);
+        reader.consume(consumed);
+        if newline.is_some() {
+            break;
+        }
+    }
+    String::from_utf8(line)
+        .map(Some)
+        .map_err(|_| Error::Protocol(format!("{stream} was not valid UTF-8")))
+}
+
+#[cfg(unix)]
+struct ProcessTree {
+    process_group: libc::pid_t,
+    active: AtomicBool,
+}
+
+#[cfg(unix)]
+impl ProcessTree {
+    fn attach(child: &Child) -> Result<Self> {
+        let process_group = child.id().ok_or_else(|| {
+            Error::Protocol("spawned CLI did not expose a process identifier".to_owned())
+        })? as libc::pid_t;
+        Ok(Self {
+            process_group,
+            active: AtomicBool::new(true),
+        })
+    }
+
+    fn terminate_now(&self) {
+        if self.active.swap(false, Ordering::SeqCst) {
+            unsafe {
+                libc::kill(-self.process_group, libc::SIGKILL);
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+struct ProcessTree {
+    job: windows_sys::Win32::Foundation::HANDLE,
+    active: AtomicBool,
+}
+
+#[cfg(windows)]
+unsafe impl Send for ProcessTree {}
+
+#[cfg(windows)]
+unsafe impl Sync for ProcessTree {}
+
+#[cfg(windows)]
+impl ProcessTree {
+    fn attach(child: &Child) -> Result<Self> {
+        use windows_sys::Win32::{
+            Foundation::CloseHandle,
+            System::JobObjects::{
+                AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+                SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            },
+        };
+
+        unsafe {
+            let child_handle = child.raw_handle().ok_or_else(|| {
+                Error::Protocol("spawned CLI did not expose a process handle".to_owned())
+            })? as isize;
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if job == 0 {
+                return Err(Error::Io(std::io::Error::last_os_error()));
+            }
+            let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let configured = SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                &limits as *const _ as *const _,
+                std::mem::size_of_val(&limits) as u32,
+            );
+            let assigned = configured != 0 && AssignProcessToJobObject(job, child_handle) != 0;
+            if !assigned {
+                let error = std::io::Error::last_os_error();
+                CloseHandle(job);
+                return Err(Error::Io(error));
+            }
+            Ok(Self {
+                job,
+                active: AtomicBool::new(true),
+            })
+        }
+    }
+
+    fn terminate_now(&self) {
+        if self.active.swap(false, Ordering::SeqCst) {
+            unsafe {
+                windows_sys::Win32::System::JobObjects::TerminateJobObject(self.job, 1);
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for ProcessTree {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::Foundation::CloseHandle(self.job);
+        }
+    }
+}
+
+fn rpc_method_allowed(profile: RuntimeProfile, method: &str) -> bool {
+    match profile {
+        RuntimeProfile::Interactive => true,
+        RuntimeProfile::AnswerOnly(_) => {
+            matches!(method, "autohand.runtimeInspect" | "autohand.answer")
+        }
+        RuntimeProfile::SetupOnly(_) => matches!(
+            method,
+            "autohand.login.begin" | "autohand.login.poll" | "autohand.login.cancel"
+        ),
+    }
+}
+
+fn profile_name(profile: RuntimeProfile) -> &'static str {
+    match profile {
+        RuntimeProfile::Interactive => "interactive",
+        RuntimeProfile::AnswerOnly(_) => "answer_only",
+        RuntimeProfile::SetupOnly(_) => "setup_only",
+    }
+}
+
+fn command_for_network_policy(config: &Config, cli: &str) -> Result<Command> {
+    match config.network_policy {
+        crate::ChildNetworkPolicy::Inherit
+        | crate::ChildNetworkPolicy::SetupOnly(
+            crate::SetupTrafficClass::AutohandDeviceAuthorization,
+        ) => {
+            let mut command = Command::new(cli);
+            command.args(config.cli_args());
+            Ok(command)
+        }
+        crate::ChildNetworkPolicy::DenyAll => deny_all_command(config, cli),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn deny_all_command(config: &Config, cli: &str) -> Result<Command> {
+    const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
+    if !std::path::Path::new(SANDBOX_EXEC).is_file() {
+        return Err(Error::NetworkPolicyUnavailable(
+            "sandbox-exec is required for deny-all child egress on macOS".to_owned(),
+        ));
+    }
+    let mut command = Command::new(SANDBOX_EXEC);
+    command.args(["-p", "(version 1) (allow default) (deny network*)", cli]);
+    command.args(config.cli_args());
+    Ok(command)
+}
+
+#[cfg(target_os = "linux")]
+fn deny_all_command(config: &Config, cli: &str) -> Result<Command> {
+    let bwrap = ["/usr/bin/bwrap", "/bin/bwrap"]
+        .iter()
+        .find(|path| std::path::Path::new(path).is_file())
+        .ok_or_else(|| {
+            Error::NetworkPolicyUnavailable(
+                "bubblewrap is required for deny-all child egress on Linux".to_owned(),
+            )
+        })?;
+    let mut command = Command::new(bwrap);
+    command.args([
+        "--die-with-parent",
+        "--unshare-net",
+        "--bind",
+        "/",
+        "/",
+        "--dev-bind",
+        "/dev",
+        "/dev",
+        "--proc",
+        "/proc",
+        "--",
+        cli,
+    ]);
+    command.args(config.cli_args());
+    Ok(command)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn deny_all_command(_config: &Config, _cli: &str) -> Result<Command> {
+    Err(Error::NetworkPolicyUnavailable(
+        "deny-all child egress is not implemented on this platform".to_owned(),
+    ))
+}
+
+#[cfg(all(test, unix))]
 mod tests {
     use std::{fs, hint::black_box, os::unix::fs::PermissionsExt, time::Instant};
 

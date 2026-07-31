@@ -34,6 +34,10 @@ pub fn json_instruction(
     parts.join("\n")
 }
 
+/// Compatibility parser for interactive agent text.
+///
+/// This intentionally accepts fenced and embedded JSON and therefore must not
+/// be used for the strict Blueprint answer contract.
 pub fn parse_json_text(text: &str) -> Result<Value> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
@@ -59,6 +63,9 @@ pub fn parse_json_text(text: &str) -> Result<Value> {
     ))
 }
 
+/// Deserializes through the tolerant interactive compatibility parser.
+///
+/// Use `AutohandSdk::run_answer` when full-frame strictness is required.
 pub fn parse_json_as<T: DeserializeOwned>(text: &str) -> Result<T> {
     let value = parse_json_text(text)?;
     serde_json::from_value(value).map_err(Error::from)

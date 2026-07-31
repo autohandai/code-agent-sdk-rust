@@ -16,6 +16,12 @@ Common fields:
 - `unrestricted`, `auto_mode`, `auto_skill`, `auto_commit`: execution mode flags.
 - `context_compact`: enable or disable context compaction.
 - `yolo`, `yolo_timeout_seconds`: unattended permission policy.
+- `runtime_profile`: mutually exclusive interactive, answer-only, or setup-only
+  execution.
+- `clear_environment`, `environment_allowlist`, `network_policy`: child
+  isolation controls.
+- `max_events`, `max_event_bytes`, `max_stdout_bytes`, `max_stderr_bytes`:
+  hard capture limits.
 
 Helpers:
 
@@ -48,6 +54,10 @@ Important methods:
 - `set_model(model)`
 - `get_state()`
 - `get_messages()`
+- `runtime_facts()`
+- `run_answer<T>(envelope, schema, limits)`
+- `begin_autohand_login()` / `poll_autohand_login(session)` /
+  `cancel_autohand_login(session)`
 - `create_browser_handoff(params)`
 - `attach_browser_handoff(params)`
 - `attach_latest_browser_handoff()`
@@ -125,6 +135,8 @@ Methods:
 - `send(prompt)`
 - `run(prompt)`
 - `run_json<T>(prompt, options)`
+- `runtime_facts()`
+- `run_answer<T>(envelope, schema, limits)`
 - `allow_permission(request_id)`
 - `deny_permission(request_id)`
 - `set_plan_mode(enabled)`
@@ -153,6 +165,11 @@ Represents a single agent run.
 - `wait()`: wait until the run finishes and collect text/events.
 - `json<T>()`: parse final output as JSON.
 - `abort()`: interrupt the current run.
+
+`RunResult::status` is the closed `RunStatus::{Completed, Failed, Cancelled}`
+enum. An error terminal event is never reported as completed. `Run::abort`,
+an active `Run` dropped by its consumer, transport timeout, and SDK shutdown
+terminate the CLI process tree.
 
 ## `SdkEvent`
 
@@ -206,3 +223,8 @@ let risk: ReleaseRisk = agent
     .run_json("Assess release readiness.", JsonRunOptions::default())
     .await?;
 ```
+
+`run_json` remains for compatibility with interactive callers. It uses
+prompt-level instructions and tolerant extraction, so it is not a strict
+security seam. It returns `Error::RunTerminated` instead of decoding text from
+a failed or cancelled run. Use `run_answer` for Blueprint.

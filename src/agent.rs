@@ -1,4 +1,4 @@
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
@@ -53,6 +53,11 @@ impl Agent {
         run.wait().await
     }
 
+    /// Compatibility helper for interactive agents.
+    ///
+    /// This method uses prompt instructions plus tolerant JSON extraction and
+    /// is unsuitable for a strict security boundary. Blueprint integrations
+    /// must use [`Self::run_answer`].
     pub async fn run_json<T: DeserializeOwned>(
         &self,
         prompt: impl Into<String>,
@@ -68,7 +73,40 @@ impl Agent {
             )
         );
         let result = self.run(prompt).await?;
+        if result.status != RunStatus::Completed {
+            return Err(Error::RunTerminated {
+                status: result.status,
+            });
+        }
         parse_json_as(&result.text)
+    }
+
+    pub async fn runtime_facts(&self) -> Result<crate::RuntimeFacts> {
+        self.sdk.runtime_facts().await
+    }
+
+    pub async fn run_answer<T: DeserializeOwned>(
+        &self,
+        envelope: crate::ClassifiedAnswerEnvelope,
+        schema: crate::StrictJsonSchema,
+        limits: crate::StructuredRunLimits,
+    ) -> Result<crate::StructuredAnswerRun<T>> {
+        self.sdk.run_answer(envelope, schema, limits).await
+    }
+
+    pub async fn begin_autohand_login(&self) -> Result<crate::LoginChallenge> {
+        self.sdk.begin_autohand_login().await
+    }
+
+    pub async fn poll_autohand_login(
+        &self,
+        session: &crate::LoginSession,
+    ) -> Result<crate::LoginStatus> {
+        self.sdk.poll_autohand_login(session).await
+    }
+
+    pub async fn cancel_autohand_login(&self, session: crate::LoginSession) -> Result<()> {
+        self.sdk.cancel_autohand_login(session).await
     }
 
     pub async fn allow_permission(&self, request_id: impl Into<String>) -> Result<Value> {
@@ -282,10 +320,15 @@ pub struct Run {
     sdk: AutohandSdk,
     seen: Vec<SdkEvent>,
     text: String,
+    terminal_status: Option<RunStatus>,
+    seen_bytes: usize,
+    max_events: usize,
+    max_event_bytes: usize,
 }
 
 impl Run {
     fn new(events: tokio::sync::mpsc::Receiver<Result<SdkEvent>>, sdk: AutohandSdk) -> Self {
+        let (max_events, max_event_bytes) = sdk.event_limits();
         Self {
             id: format!(
                 "run_{}_{}",
@@ -299,6 +342,10 @@ impl Run {
             sdk,
             seen: Vec::new(),
             text: String::new(),
+            terminal_status: None,
+            seen_bytes: 0,
+            max_events,
+            max_event_bytes,
         }
     }
 
@@ -308,10 +355,13 @@ impl Run {
 
     pub async fn next(&mut self) -> Option<Result<SdkEvent>> {
         match self.events.recv().await {
-            Some(Ok(event)) => {
-                self.record(&event);
-                Some(Ok(event))
-            }
+            Some(Ok(event)) => match self.record(&event) {
+                Ok(()) => Some(Ok(event)),
+                Err(error) => {
+                    self.sdk.abort_process_tree_now();
+                    Some(Err(error))
+                }
+            },
             Some(Err(error)) => Some(Err(error)),
             None => None,
         }
@@ -321,9 +371,10 @@ impl Run {
         while let Some(event) = self.next().await {
             event?;
         }
+        let status = self.terminal_status.ok_or(Error::MissingTerminalEvent)?;
         Ok(RunResult {
             id: self.id.clone(),
-            status: "completed".to_string(),
+            status,
             text: self.text.clone(),
             events: self.seen.clone(),
         })
@@ -331,20 +382,36 @@ impl Run {
 
     pub async fn json<T: DeserializeOwned>(&mut self) -> Result<T> {
         let result = self.wait().await?;
+        if result.status != RunStatus::Completed {
+            return Err(Error::RunTerminated {
+                status: result.status,
+            });
+        }
         parse_json_as(&result.text)
     }
 
     pub async fn abort(&self) -> Result<()> {
-        self.sdk.interrupt().await.map(|_| ()).or_else(|error| {
-            if matches!(error, Error::TransportNotStarted) {
-                Ok(())
-            } else {
-                Err(error)
-            }
-        })
+        self.sdk.abort_process_tree().await
     }
 
-    fn record(&mut self, event: &SdkEvent) {
+    fn record(&mut self, event: &SdkEvent) -> Result<()> {
+        if self.seen.len() >= self.max_events {
+            return Err(Error::EventLimitExceeded {
+                limit: self.max_events,
+            });
+        }
+        let event_bytes = serde_json::to_vec(&event.raw)?.len() + event.event_type.len();
+        if self
+            .seen_bytes
+            .checked_add(event_bytes)
+            .map_or(true, |bytes| bytes > self.max_event_bytes)
+        {
+            return Err(Error::OutputLimitExceeded {
+                stream: "captured events",
+                limit: self.max_event_bytes,
+            });
+        }
+        self.seen_bytes += event_bytes;
         if let Some(delta) = event.text_delta() {
             self.text.push_str(delta);
         }
@@ -352,14 +419,79 @@ impl Run {
             self.text.clear();
             self.text.push_str(content);
         }
+        let observed_terminal = match event.event_type.as_str() {
+            "error" => Some(RunStatus::Failed),
+            "agent_end" => match event.raw.get("reason").and_then(Value::as_str) {
+                Some("completed") => Some(RunStatus::Completed),
+                Some("aborted") => Some(RunStatus::Cancelled),
+                Some("error") | Some(_) | None => Some(RunStatus::Failed),
+            },
+            _ => None,
+        };
+        self.terminal_status = merge_terminal_status(self.terminal_status, observed_terminal);
         self.seen.push(event.clone());
+        Ok(())
+    }
+}
+
+fn merge_terminal_status(
+    current: Option<RunStatus>,
+    observed: Option<RunStatus>,
+) -> Option<RunStatus> {
+    match (current, observed) {
+        (Some(status @ (RunStatus::Failed | RunStatus::Cancelled)), _) => Some(status),
+        (_, Some(status)) => Some(status),
+        (status, None) => status,
+    }
+}
+
+impl Drop for Run {
+    fn drop(&mut self) {
+        if self.terminal_status.is_none() {
+            self.sdk.abort_process_tree_now();
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunStatus {
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+impl std::fmt::Display for RunStatus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        })
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct RunResult {
     pub id: String,
-    pub status: String,
+    pub status: RunStatus,
     pub text: String,
     pub events: Vec<SdkEvent>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{merge_terminal_status, RunStatus};
+
+    #[test]
+    fn non_success_terminal_status_cannot_be_overwritten_by_completed() {
+        assert_eq!(
+            merge_terminal_status(Some(RunStatus::Failed), Some(RunStatus::Completed)),
+            Some(RunStatus::Failed)
+        );
+        assert_eq!(
+            merge_terminal_status(Some(RunStatus::Cancelled), Some(RunStatus::Completed)),
+            Some(RunStatus::Cancelled)
+        );
+    }
 }

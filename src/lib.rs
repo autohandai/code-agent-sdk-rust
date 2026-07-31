@@ -1,6 +1,7 @@
 mod agent;
 mod automode;
 mod autoresearch;
+mod blueprint;
 mod browser_handoff;
 mod command;
 mod config;
@@ -13,12 +14,16 @@ mod goal;
 mod json_output;
 mod transport;
 
-pub use agent::{Agent, JsonRunOptions, Run, RunResult};
+pub use agent::{Agent, JsonRunOptions, Run, RunResult, RunStatus};
 pub use automode::*;
 pub use autoresearch::*;
+pub use blueprint::*;
 pub use browser_handoff::*;
 pub use command::format_slash_command;
-pub use config::{Config, FeatureFlagSettings, PromptOptions, ProviderName};
+pub use config::{
+    AnswerOnlyProfile, ChildNetworkPolicy, ClientContext, Config, FeatureFlagSettings,
+    PromptOptions, ProviderName, RuntimeProfile, SetupOnlyProfile, SetupTrafficClass,
+};
 pub use conversation::*;
 pub use current_cli::*;
 pub use discovery::*;

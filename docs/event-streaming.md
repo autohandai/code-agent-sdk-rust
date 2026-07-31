@@ -21,6 +21,12 @@ Dropping the receiver cancels that stream's in-flight prompt wait. The
 transport also removes its pending request ID immediately, so abandoned streams
 do not accumulate request state in long-lived hosts.
 
+The transport enforces configured stdout, stderr, event-count, and event-byte
+limits before retaining more data. Broadcast lag is reported as
+`Error::EventStreamLagged`; it is never silently skipped. A limit violation,
+timeout, abort, dropped active `Run`, or final SDK shutdown terminates the
+complete CLI process tree.
+
 ## Event Types
 
 - `message_update`: token or text delta.
@@ -58,3 +64,7 @@ while let Some(event) = run.next().await {
 let result = run.wait().await?;
 println!("{}", result.text);
 ```
+
+`RunResult::status` is the typed `RunStatus` observed from the terminal event.
+If the stream closes without a terminal event, `wait()` returns
+`Error::MissingTerminalEvent`.

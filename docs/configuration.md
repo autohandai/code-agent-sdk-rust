@@ -13,6 +13,44 @@ take precedence.
 
 The Rust SDK keeps configuration close to the Autohand CLI contract. Most fields become CLI flags when the subprocess starts.
 
+## Mutually Exclusive Runtime Profiles
+
+Normal callers use the default interactive profile. Blueprint uses one of two
+closed profiles:
+
+```rust
+let answer = Config::default()
+    .with_cli_path("/reviewed/path/to/autohand")
+    .with_answer_only_profile(AnswerOnlyProfile::blueprint());
+
+let setup = Config::default()
+    .with_cli_path("/reviewed/path/to/autohand")
+    .with_setup_only_profile(SetupOnlyProfile::autohand_device_authorization());
+```
+
+Answer-only always launches with `--answer-only --restricted
+--client-context blueprint`, clears the inherited environment, and requires
+deny-all child egress. Setup-only uses a distinct `--setup-only` profile and
+admits only the versioned Autohand device-authorization traffic class. Neither
+profile can call the interactive prompt/control RPC surface.
+
+`extra_args` and interactive/workspace/provider overrides are rejected for
+both restricted profiles. The SDK restores only minimal platform process
+variables plus names explicitly selected by `allow_environment`; direct
+`Config::env` injection is rejected for these profiles. Blueprint production
+configuration should keep the explicit allowlist empty unless a reviewed
+runtime dependency requires a named variable. `HOME`/`USERPROFILE` is
+preserved so the CLI can use its normal credential owner without the SDK
+reading or copying a credential.
+
+Behavior-changing Autohand endpoint variables, proxy variables, and process
+injection variables such as `NODE_OPTIONS`, `LD_PRELOAD`, and
+`DYLD_INSERT_LIBRARIES` cannot be restored by the restricted allowlist.
+TLS trust overrides such as `NODE_EXTRA_CA_CERTS` are also forbidden.
+
+Restricted output and capture limits may be lowered for a deployment, but
+cannot be raised above the version-1 contract defaults.
+
 ## Basic Configuration
 
 ```rust
@@ -52,6 +90,8 @@ Common options:
 - `additional_directories`: extra workspace roots.
 - `skills`: skills available to the agent.
 - `env`: environment variables for the CLI subprocess.
+- `max_events`, `max_event_bytes`: event collection limits.
+- `max_stdout_bytes`, `max_stderr_bytes`: subprocess capture limits.
 
 ## System Prompts
 
