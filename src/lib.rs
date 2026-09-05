@@ -12,6 +12,7 @@ mod error;
 mod event;
 mod goal;
 mod json_output;
+mod step_control;
 mod transport;
 
 pub use agent::{Agent, JsonRunOptions, Run, RunResult, RunStatus};
@@ -31,6 +32,10 @@ pub use error::{Error, Result};
 pub use event::{SdkEvent, TokenUsageStatus, TurnEndUsage};
 pub use goal::*;
 pub use json_output::{parse_json_text, StructuredOutputError};
+pub use step_control::{
+    has_tool_call, is_step_count, AgentStep, AgentStepToolCall, AgentStepToolResult, StepEndEvent,
+    StopCondition, StopConditionContext,
+};
 pub use transport::AutohandSdk;
 
 /// Performs idempotent eager initialization of the public SDK runtime.

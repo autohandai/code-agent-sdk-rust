@@ -84,6 +84,11 @@ impl SdkEvent {
         (self.event_type == "turn_end").then(|| serde_json::from_value(self.raw.clone()))
     }
 
+    /// Decode a completed tool step while retaining the original event payload.
+    pub fn step_end(&self) -> Option<serde_json::Result<crate::StepEndEvent>> {
+        (self.event_type == "step_end").then(|| serde_json::from_value(self.raw.clone()))
+    }
+
     /// Decodes an auto-mode iteration while retaining `raw` for forward
     /// compatibility.
     pub fn automode_iteration(&self) -> Option<serde_json::Result<crate::AutomodeIterationEvent>> {
@@ -265,6 +270,7 @@ fn method_to_type(method: &str) -> String {
         "autohand.agentEnd" => "agent_end",
         "autohand.turnStart" => "turn_start",
         "autohand.turnEnd" => "turn_end",
+        "autohand.stepEnd" => "step_end",
         "autohand.messageStart" => "message_start",
         "autohand.messageUpdate" => "message_update",
         "autohand.messageEnd" => "message_end",

@@ -20,6 +20,7 @@ Use it when you want to embed Autohand inside a Rust service, developer tool, CL
 
 - Tokio-based subprocess transport over JSON-RPC 2.0
 - `Agent` and `Run` for high-level application workflows
+- Resumable tool-step stops with synchronous or asynchronous host predicates
 - `AutohandSdk` for direct low-level RPC access
 - Typed streaming events for messages, tools, permissions, and errors
 - Permission response helpers for host-controlled approval flows
@@ -38,6 +39,9 @@ Use it when you want to embed Autohand inside a Rust service, developer tool, CL
   private transaction state inside an opaque SDK handle
 
 ## Requirements
+
+See [step control](docs/step-control.md) for `PromptOptions::stop_when`,
+`is_step_count`, `has_tool_call`, and continuation on the same CLI session.
 
 - Rust 1.76 or later
 - Tokio runtime

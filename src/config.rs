@@ -713,6 +713,8 @@ pub struct PromptOptions {
     pub images: Vec<Value>,
     pub thinking_level: Option<String>,
     pub extra: Map<String, Value>,
+    /// Host predicates, evaluated with OR semantics after each persisted tool step.
+    pub stop_when: Vec<crate::StopCondition>,
 }
 
 impl PromptOptions {
@@ -733,6 +735,9 @@ impl PromptOptions {
         }
         for (key, value) in &self.extra {
             params.insert(key.clone(), value.clone());
+        }
+        if !self.stop_when.is_empty() {
+            params.insert("stopWhen".into(), serde_json::json!({"mode": "host"}));
         }
         Value::Object(params)
     }

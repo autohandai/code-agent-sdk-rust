@@ -1,9 +1,12 @@
+use std::sync::Arc;
+
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
     json_output::{json_instruction, parse_json_as},
-    AutohandSdk, AutomodeCancelParams, AutomodeCancelResult, AutomodeGetLogParams,
+    transport::PromptControl,
+    AgentStep, AutohandSdk, AutomodeCancelParams, AutomodeCancelResult, AutomodeGetLogParams,
     AutomodeGetLogResult, AutomodePauseResult, AutomodeResumeResult, AutomodeStartParams,
     AutomodeStartResult, AutomodeStatusResult, AutoresearchCompareParams,
     AutoresearchCompareResult, AutoresearchHistoryResult, AutoresearchParetoResult,
@@ -41,16 +44,36 @@ impl Agent {
     }
 
     pub async fn send(&self, prompt: impl Into<String>) -> Result<Run> {
-        let events = self
-            .sdk
-            .stream_prompt(prompt.into(), PromptOptions::default())
-            .await?;
-        Ok(Run::new(events, self.sdk.clone()))
+        self.send_with_options(prompt, PromptOptions::default())
+            .await
+    }
+
+    /// Start a run with prompt options, including host-side stop conditions.
+    pub async fn send_with_options(
+        &self,
+        prompt: impl Into<String>,
+        options: PromptOptions,
+    ) -> Result<Run> {
+        let prompt = self.sdk.start_prompt(prompt.into(), options)?;
+        Ok(Run::new(
+            prompt.events,
+            prompt.control,
+            self.sdk.event_limits(),
+        ))
     }
 
     pub async fn run(&self, prompt: impl Into<String>) -> Result<RunResult> {
         let mut run = self.send(prompt).await?;
         run.wait().await
+    }
+
+    /// Run a prompt to completion or a resumable stop boundary.
+    pub async fn run_with_options(
+        &self,
+        prompt: impl Into<String>,
+        options: PromptOptions,
+    ) -> Result<RunResult> {
+        self.send_with_options(prompt, options).await?.wait().await
     }
 
     /// Compatibility helper for interactive agents.
@@ -317,8 +340,10 @@ impl Agent {
 pub struct Run {
     id: String,
     events: tokio::sync::mpsc::Receiver<Result<SdkEvent>>,
-    sdk: AutohandSdk,
+    control: Arc<PromptControl>,
     seen: Vec<SdkEvent>,
+    steps: Vec<AgentStep>,
+    failure: Option<String>,
     text: String,
     terminal_status: Option<RunStatus>,
     seen_bytes: usize,
@@ -327,8 +352,11 @@ pub struct Run {
 }
 
 impl Run {
-    fn new(events: tokio::sync::mpsc::Receiver<Result<SdkEvent>>, sdk: AutohandSdk) -> Self {
-        let (max_events, max_event_bytes) = sdk.event_limits();
+    fn new(
+        events: tokio::sync::mpsc::Receiver<Result<SdkEvent>>,
+        control: Arc<PromptControl>,
+        (max_events, max_event_bytes): (usize, usize),
+    ) -> Self {
         Self {
             id: format!(
                 "run_{}_{}",
@@ -339,8 +367,10 @@ impl Run {
                 std::process::id()
             ),
             events,
-            sdk,
+            control,
             seen: Vec::new(),
+            steps: Vec::new(),
+            failure: None,
             text: String::new(),
             terminal_status: None,
             seen_bytes: 0,
@@ -358,25 +388,38 @@ impl Run {
             Some(Ok(event)) => match self.record(&event) {
                 Ok(()) => Some(Ok(event)),
                 Err(error) => {
-                    self.sdk.abort_process_tree_now();
+                    self.failure = Some(error.to_string());
+                    self.control.cancel_now();
                     Some(Err(error))
                 }
             },
-            Some(Err(error)) => Some(Err(error)),
+            Some(Err(_)) if self.control.is_cancelled() => None,
+            Some(Err(error)) => {
+                self.failure = Some(error.to_string());
+                Some(Err(error))
+            }
             None => None,
         }
     }
 
     pub async fn wait(&mut self) -> Result<RunResult> {
+        if let Some(failure) = &self.failure {
+            return Err(Error::Protocol(format!("run previously failed: {failure}")));
+        }
         while let Some(event) = self.next().await {
             event?;
         }
-        let status = self.terminal_status.ok_or(Error::MissingTerminalEvent)?;
+        let status = if self.control.is_cancelled() {
+            RunStatus::Cancelled
+        } else {
+            self.terminal_status.ok_or(Error::MissingTerminalEvent)?
+        };
         Ok(RunResult {
             id: self.id.clone(),
             status,
             text: self.text.clone(),
             events: self.seen.clone(),
+            steps: self.steps.clone(),
         })
     }
 
@@ -391,7 +434,7 @@ impl Run {
     }
 
     pub async fn abort(&self) -> Result<()> {
-        self.sdk.abort_process_tree().await
+        self.control.abort().await
     }
 
     fn record(&mut self, event: &SdkEvent) -> Result<()> {
@@ -412,6 +455,9 @@ impl Run {
             });
         }
         self.seen_bytes += event_bytes;
+        if let Some(step) = event.step_end() {
+            self.steps.push(step?.step);
+        }
         if let Some(delta) = event.text_delta() {
             self.text.push_str(delta);
         }
@@ -421,9 +467,10 @@ impl Run {
         }
         let observed_terminal = match event.event_type.as_str() {
             "error" => Some(RunStatus::Failed),
-            "agent_end" => match event.raw.get("reason").and_then(Value::as_str) {
+            "agent_end" | "turn_end" => match event.raw.get("reason").and_then(Value::as_str) {
                 Some("completed") => Some(RunStatus::Completed),
                 Some("aborted") => Some(RunStatus::Cancelled),
+                Some("stop_condition" | "stopped") => Some(RunStatus::Stopped),
                 Some("error") | Some(_) | None => Some(RunStatus::Failed),
             },
             _ => None,
@@ -440,6 +487,7 @@ fn merge_terminal_status(
 ) -> Option<RunStatus> {
     match (current, observed) {
         (Some(status @ (RunStatus::Failed | RunStatus::Cancelled)), _) => Some(status),
+        (Some(RunStatus::Stopped), Some(RunStatus::Completed) | None) => Some(RunStatus::Stopped),
         (_, Some(status)) => Some(status),
         (status, None) => status,
     }
@@ -448,7 +496,7 @@ fn merge_terminal_status(
 impl Drop for Run {
     fn drop(&mut self) {
         if self.terminal_status.is_none() {
-            self.sdk.abort_process_tree_now();
+            self.control.cancel_now();
         }
     }
 }
@@ -459,6 +507,7 @@ pub enum RunStatus {
     Completed,
     Failed,
     Cancelled,
+    Stopped,
 }
 
 impl std::fmt::Display for RunStatus {
@@ -467,6 +516,7 @@ impl std::fmt::Display for RunStatus {
             Self::Completed => "completed",
             Self::Failed => "failed",
             Self::Cancelled => "cancelled",
+            Self::Stopped => "stopped",
         })
     }
 }
@@ -477,6 +527,7 @@ pub struct RunResult {
     pub status: RunStatus,
     pub text: String,
     pub events: Vec<SdkEvent>,
+    pub steps: Vec<AgentStep>,
 }
 
 #[cfg(test)]
@@ -492,6 +543,14 @@ mod tests {
         assert_eq!(
             merge_terminal_status(Some(RunStatus::Cancelled), Some(RunStatus::Completed)),
             Some(RunStatus::Cancelled)
+        );
+        assert_eq!(
+            merge_terminal_status(Some(RunStatus::Stopped), Some(RunStatus::Completed)),
+            Some(RunStatus::Stopped)
+        );
+        assert_eq!(
+            merge_terminal_status(Some(RunStatus::Stopped), Some(RunStatus::Failed)),
+            Some(RunStatus::Failed)
         );
     }
 }

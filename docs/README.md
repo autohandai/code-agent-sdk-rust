@@ -12,5 +12,6 @@ The Rust SDK is a Tokio-based wrapper around the Autohand CLI JSON-RPC mode.
 - [Error Handling](./error-handling.md)
 - [Examples](./examples.md)
 - [Startup Performance](./startup-performance.md)
+- [Resumable Step Control](./step-control.md)
 
 Canonical Agent SDK docs live at https://autohand.ai/docs/agent-sdk/.

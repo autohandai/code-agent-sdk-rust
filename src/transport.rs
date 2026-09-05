@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     process::Stdio,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
         Arc, Mutex as StdMutex, Weak,
     },
     time::Duration,
@@ -13,7 +13,8 @@ use serde_json::{json, Value};
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, Command},
-    sync::{broadcast, oneshot, Mutex},
+    sync::{broadcast, mpsc, oneshot, Mutex, Notify},
+    task::JoinSet,
     time,
 };
 
@@ -35,8 +36,8 @@ use crate::{
     InstallSkillParams, InstallSkillResult, LoginChallenge, LoginChallengeWire, LoginProblem,
     LoginProblemCode, LoginSession, LoginStatus, LoginStatusWire, McpGetServerConfigsResult,
     McpListServersResult, McpListToolsParams, McpListToolsResult, ResetResult, Result,
-    RuntimeFacts, RuntimeProfile, SdkEvent, StrictJsonSchema, StructuredAnswerRun,
-    StructuredRunLimits, AUTOHAND_LOGIN_CONTRACT_VERSION,
+    RuntimeFacts, RuntimeProfile, SdkEvent, StepEndEvent, StopCondition, StopConditionContext,
+    StrictJsonSchema, StructuredAnswerRun, StructuredRunLimits, AUTOHAND_LOGIN_CONTRACT_VERSION,
 };
 
 #[derive(Clone)]
@@ -114,19 +115,6 @@ impl AutohandSdk {
             .take();
         if let Some(inner) = inner {
             inner.stop().await?;
-        }
-        Ok(())
-    }
-
-    pub(crate) async fn abort_process_tree(&self) -> Result<()> {
-        let inner = self
-            .lifecycle
-            .inner
-            .lock()
-            .map_err(|_| Error::LifecyclePoisoned)?
-            .take();
-        if let Some(inner) = inner {
-            inner.terminate().await?;
         }
         Ok(())
     }
@@ -280,8 +268,14 @@ impl AutohandSdk {
         message: impl Into<String>,
         options: PromptOptions,
     ) -> Result<Value> {
-        self.request("autohand.prompt", options.to_params(message))
+        let mut prompt = self.start_prompt(message.into(), options)?;
+        while let Some(event) = prompt.events.recv().await {
+            event?;
+        }
+        prompt
+            .response
             .await
+            .map_err(|_| Error::MissingTerminalEvent)
     }
 
     pub async fn stream_command(
@@ -349,6 +343,15 @@ impl AutohandSdk {
         message: impl Into<String>,
         options: PromptOptions,
     ) -> Result<tokio::sync::mpsc::Receiver<Result<SdkEvent>>> {
+        self.start_prompt(message.into(), options)
+            .map(|prompt| prompt.events)
+    }
+
+    pub(crate) fn start_prompt(
+        &self,
+        message: String,
+        options: PromptOptions,
+    ) -> Result<PromptStream> {
         if !rpc_method_allowed(self.config.runtime_profile, "autohand.prompt") {
             return Err(Error::ProfileViolation {
                 profile: profile_name(self.config.runtime_profile),
@@ -356,97 +359,72 @@ impl AutohandSdk {
             });
         }
         let inner = self.inner()?.clone();
-        let mut events = inner.events.subscribe();
-        let (tx, rx) = tokio::sync::mpsc::channel(256);
+        let (tx, rx) = mpsc::channel(256);
+        let (response_tx, response) = oneshot::channel();
         let params = options.to_params(message);
-        let terminal_grace_duration = inner.config.timeout.min(Duration::from_secs(1));
-
+        let reserved_turn = inner.prompt_lock.clone().try_lock_owned().ok();
+        let control = Arc::new(PromptControl {
+            state: AtomicU8::new(if reserved_turn.is_some() {
+                PROMPT_ACTIVE
+            } else {
+                PROMPT_QUEUED
+            }),
+            cancelled: Notify::new(),
+            inner: Arc::downgrade(&inner),
+            lifecycle: Arc::downgrade(&self.lifecycle),
+        });
+        let task_control = control.clone();
         tokio::spawn(async move {
-            let request = inner.request("autohand.prompt", params);
-            tokio::pin!(request);
-            let mut request_done = false;
-            let mut stream_done = false;
-            let mut failure_grace_active = false;
-            let failure_grace = time::sleep(terminal_grace_duration);
-            tokio::pin!(failure_grace);
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = tx.closed() => {
-                        break;
+            let _turn = match reserved_turn {
+                Some(guard) => guard,
+                None => {
+                    let guard = tokio::select! {
+                        biased;
+                        _ = tx.closed() => return,
+                        _ = task_control.cancelled.notified() => return,
+                        guard = inner.prompt_lock.clone().lock_owned() => guard,
+                    };
+                    if task_control
+                        .state
+                        .compare_exchange(
+                            PROMPT_QUEUED,
+                            PROMPT_ACTIVE,
+                            Ordering::SeqCst,
+                            Ordering::SeqCst,
+                        )
+                        .is_err()
+                    {
+                        return;
                     }
-                    event = events.recv() => {
-                        match event {
-                            Ok(event) => {
-                                let terminal = is_final_stream_event(&event);
-                                let failure = event.event_type == "error";
-                                if tx.send(Ok(event)).await.is_err() {
-                                    break;
-                                }
-                                if failure {
-                                    failure_grace.as_mut().reset(
-                                        time::Instant::now() + terminal_grace_duration
-                                    );
-                                    failure_grace_active = true;
-                                }
-                                if terminal {
-                                    stream_done = true;
-                                    if request_done {
-                                        break;
-                                    }
-                                }
-                            }
-                            Err(broadcast::error::RecvError::Lagged(count)) => {
-                                inner.process_tree.terminate_now();
-                                let _ = tx.send(Err(Error::EventStreamLagged { count })).await;
-                                break;
-                            }
-                            Err(broadcast::error::RecvError::Closed) => {
-                                if !stream_done {
-                                    let _ = tx.send(Err(Error::ChannelClosed)).await;
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    _ = &mut failure_grace, if failure_grace_active => {
-                        stream_done = true;
-                        failure_grace_active = false;
-                        if request_done {
-                            break;
-                        }
-                    }
-                    result = &mut request, if !request_done => {
-                        if let Err(error) = result {
-                            let _ = tx.send(Err(error)).await;
-                            break;
-                        }
-                        request_done = true;
-                        while let Ok(event) = events.try_recv() {
-                            let terminal = is_final_stream_event(&event);
-                            let failure = event.event_type == "error";
-                            if tx.send(Ok(event)).await.is_err() {
-                                break;
-                            }
-                            if terminal {
-                                stream_done = true;
-                            }
-                            if failure {
-                                failure_grace.as_mut().reset(
-                                    time::Instant::now() + terminal_grace_duration
-                                );
-                                failure_grace_active = true;
-                            }
-                        }
-                        if stream_done {
-                            break;
-                        }
-                    }
+                    guard
                 }
+            };
+            // Subscribe only after the previous turn's cleanup has finished.
+            let mut events = inner.events.subscribe();
+            let (result, settled) = inner
+                .pump_prompt(
+                    &tx,
+                    &task_control,
+                    &mut events,
+                    params,
+                    options.stop_when,
+                    response_tx,
+                )
+                .await;
+            if !settled && !task_control.is_cancelled() {
+                inner.settle_prompt(&mut events).await;
+            }
+            task_control.finish();
+            drop(_turn);
+            if let Err(error) = result {
+                let _ = tx.send(Err(error)).await;
             }
         });
-
-        Ok(rx)
+        Ok(PromptStream {
+            events: rx,
+            control,
+            response,
+        })
     }
 
     pub async fn interrupt(&self) -> Result<Value> {
@@ -870,7 +848,80 @@ impl AutohandSdk {
 }
 
 fn is_final_stream_event(event: &SdkEvent) -> bool {
-    matches!(event.event_type.as_str(), "agent_end" | "transport_closed")
+    matches!(event.event_type.as_str(), "agent_end" | "turn_end")
+}
+
+const PROMPT_QUEUED: u8 = 0;
+const PROMPT_ACTIVE: u8 = 1;
+const PROMPT_FINISHED: u8 = 2;
+const PROMPT_CANCELLED: u8 = 3;
+
+pub(crate) struct PromptStream {
+    pub events: mpsc::Receiver<Result<SdkEvent>>,
+    pub control: Arc<PromptControl>,
+    pub response: oneshot::Receiver<Value>,
+}
+
+pub(crate) struct PromptControl {
+    state: AtomicU8,
+    cancelled: Notify,
+    inner: Weak<TransportInner>,
+    lifecycle: Weak<Lifecycle>,
+}
+
+impl PromptControl {
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.state.load(Ordering::SeqCst) == PROMPT_CANCELLED
+    }
+
+    fn finish(&self) {
+        let _ = self.state.compare_exchange(
+            PROMPT_ACTIVE,
+            PROMPT_FINISHED,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
+    }
+
+    // The state transition and generation identity prevent a queued/old run
+    // from terminating another turn or a replacement subprocess.
+    fn cancel_inner(&self) -> Option<Arc<TransportInner>> {
+        let previous = self
+            .state
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |state| {
+                (state == PROMPT_QUEUED || state == PROMPT_ACTIVE).then_some(PROMPT_CANCELLED)
+            })
+            .ok()?;
+        self.cancelled.notify_one();
+        if previous != PROMPT_ACTIVE {
+            return None;
+        }
+        let inner = self.inner.upgrade()?;
+        if let Some(lifecycle) = self.lifecycle.upgrade() {
+            if let Ok(mut active) = lifecycle.inner.lock() {
+                if active
+                    .as_ref()
+                    .is_some_and(|current| Arc::ptr_eq(current, &inner))
+                {
+                    active.take();
+                }
+            }
+        }
+        inner.process_tree.terminate_now();
+        inner.fail_pending();
+        Some(inner)
+    }
+
+    pub(crate) fn cancel_now(&self) {
+        self.cancel_inner();
+    }
+
+    pub(crate) async fn abort(&self) -> Result<()> {
+        if let Some(inner) = self.cancel_inner() {
+            inner.terminate().await?;
+        }
+        Ok(())
+    }
 }
 
 struct TransportInner {
@@ -882,6 +933,7 @@ struct TransportInner {
     next_id: AtomicU64,
     events: broadcast::Sender<SdkEvent>,
     process_tree: ProcessTree,
+    prompt_lock: Arc<Mutex<()>>,
 }
 
 #[derive(Debug, Clone)]
@@ -1051,6 +1103,7 @@ impl TransportInner {
             next_id: AtomicU64::new(1),
             events,
             process_tree,
+            prompt_lock: Arc::new(Mutex::new(())),
         });
         Self::spawn_stdout_reader(
             Arc::downgrade(&inner),
@@ -1066,6 +1119,176 @@ impl TransportInner {
             );
         }
         Ok(inner)
+    }
+
+    async fn pump_prompt(
+        self: &Arc<Self>,
+        tx: &mpsc::Sender<Result<SdkEvent>>,
+        control: &PromptControl,
+        events: &mut broadcast::Receiver<SdkEvent>,
+        params: Value,
+        conditions: Vec<StopCondition>,
+        response: oneshot::Sender<Value>,
+    ) -> (Result<()>, bool) {
+        let request_started = AtomicBool::new(false);
+        let request = async {
+            request_started.store(true, Ordering::SeqCst);
+            self.request("autohand.prompt", params).await
+        };
+        tokio::pin!(request);
+        let mut acknowledged = false;
+        let mut terminal = false;
+        let mut rejected = false;
+        let mut response = Some(response);
+        let mut steps = Arc::new(Vec::new());
+        let mut decisions = JoinSet::new();
+        let mut predicate_error = None;
+        let grace_duration = self.config.timeout.min(Duration::from_secs(1));
+        let failure_grace = time::sleep(grace_duration);
+        tokio::pin!(failure_grace);
+        let mut failed = false;
+        let result = async {
+            loop {
+                if terminal && acknowledged && decisions.is_empty() {
+                    return predicate_error.take().map_or(Ok(()), Err);
+                }
+                tokio::select! {
+                    biased;
+                    _ = tx.closed() => return Ok(()),
+                    _ = control.cancelled.notified() => return Ok(()),
+                    result = decisions.join_next(), if !decisions.is_empty() => {
+                        if let Some(result) = result {
+                            if let Some(error) = result?? {
+                                predicate_error = Some(error);
+                                failed = true;
+                                failure_grace.as_mut().reset(time::Instant::now() + Duration::from_secs(2));
+                            }
+                        }
+                    }
+                    event = events.recv() => {
+                        let event = match event {
+                            Ok(event) => event,
+                            Err(broadcast::error::RecvError::Lagged(count)) => return Err(Error::EventStreamLagged { count }),
+                            Err(broadcast::error::RecvError::Closed) => return Err(Error::ChannelClosed),
+                        };
+                        if event.event_type == "transport_closed" { return Err(Error::MissingTerminalEvent); }
+                        if let Some(step) = event.step_end() {
+                            let step = step?;
+                            if step.step_id.is_empty() { return Err(Error::Protocol("stepId must be non-empty".into())); }
+                            // A valid next step follows acknowledgement of the previous decision.
+                            let previous = tokio::select! {
+                                biased;
+                                _ = tx.closed() => return Ok(()),
+                                _ = control.cancelled.notified() => return Ok(()),
+                                previous = decisions.join_next() => previous,
+                            };
+                            if let Some(result) = previous {
+                                if let Some(error) = result?? { return Err(error); }
+                            }
+                            Arc::make_mut(&mut steps).push(step.step.clone());
+                            if !conditions.is_empty() {
+                                let inner = self.clone();
+                                let conditions = conditions.clone();
+                                let context = StopConditionContext { steps: steps.clone() };
+                                decisions.spawn(async move { inner.decide_step(step, context, conditions).await });
+                            }
+                        }
+                        terminal |= is_final_stream_event(&event);
+                        if terminal && matches!(event.raw.get("reason").and_then(Value::as_str), Some("aborted" | "error" | "failed" | "cancelled")) {
+                            decisions.abort_all();
+                            while decisions.join_next().await.is_some() {}
+                        }
+                        if event.event_type == "error" {
+                            failed = true;
+                            failure_grace.as_mut().reset(time::Instant::now() + grace_duration);
+                        }
+                        tokio::select! {
+                            biased;
+                            _ = control.cancelled.notified() => return Ok(()),
+                            sent = tx.send(Ok(event)) => if sent.is_err() { return Ok(()); },
+                        }
+                    }
+                    _ = &mut failure_grace, if failed => return predicate_error.take().map_or(Ok(()), Err),
+                    result = &mut request, if !acknowledged => {
+                        let value = match result {
+                            Ok(value) => value,
+                            Err(error) => {
+                                rejected = matches!(error, Error::Rpc { .. } | Error::AuthenticationRequired { .. });
+                                return Err(error);
+                            }
+                        };
+                        if let Some(response) = response.take() { let _ = response.send(value); }
+                        acknowledged = true;
+                    }
+                }
+            }
+        }.await;
+        decisions.abort_all();
+        while decisions.join_next().await.is_some() {}
+        (
+            result,
+            terminal || rejected || !request_started.load(Ordering::SeqCst),
+        )
+    }
+
+    async fn decide_step(
+        &self,
+        step: StepEndEvent,
+        context: StopConditionContext,
+        conditions: Vec<StopCondition>,
+    ) -> Result<Option<Error>> {
+        let mut stop = false;
+        for condition in conditions {
+            match condition.evaluate(context.clone()).await {
+                Ok(true) => {
+                    stop = true;
+                    break;
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    return match self.step_decision(&step.step_id, true).await {
+                        Ok(()) => Ok(Some(error)),
+                        Err(_) => Err(error),
+                    };
+                }
+            }
+        }
+        self.step_decision(&step.step_id, stop).await?;
+        Ok(None)
+    }
+
+    async fn step_decision(&self, step_id: &str, stop: bool) -> Result<()> {
+        let result = self
+            .request(
+                "autohand.stepDecision",
+                json!({"stepId": step_id, "stop": stop}),
+            )
+            .await?;
+        if result.get("success") != Some(&Value::Bool(true)) {
+            return Err(Error::Protocol(
+                "autohand.stepDecision was rejected or returned an invalid result".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn settle_prompt(&self, events: &mut broadcast::Receiver<SdkEvent>) {
+        let settled = time::timeout(Duration::from_secs(2), async {
+            self.request("autohand.abort", json!({})).await?;
+            loop {
+                let event = events.recv().await.map_err(|_| Error::ChannelClosed)?;
+                if is_final_stream_event(&event) {
+                    return Ok::<_, Error>(());
+                }
+                if event.event_type == "transport_closed" {
+                    return Err(Error::ChannelClosed);
+                }
+            }
+        })
+        .await;
+        if !matches!(settled, Ok(Ok(()))) {
+            let _ = self.terminate().await;
+        }
     }
 
     async fn stop(&self) -> Result<()> {
@@ -1923,6 +2146,7 @@ done
                 .len(),
             1
         );
+        let request_id = *inner.pending.lock().unwrap().keys().next().unwrap();
 
         drop(receiver);
         time::timeout(Duration::from_secs(1), async {
@@ -1931,7 +2155,8 @@ done
                     .pending
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .is_empty()
+                    .get(&request_id)
+                    .is_none()
                 {
                     break;
                 }
@@ -1940,6 +2165,17 @@ done
         })
         .await
         .expect("dropping the stream receiver should cancel and clean up its request");
+        time::timeout(Duration::from_secs(3), async {
+            loop {
+                if inner.pending.lock().unwrap().is_empty() {
+                    break;
+                }
+                time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("an unresponsive abort is bounded and retires the process");
+        assert!(inner.child.lock().await.try_wait().unwrap().is_some());
         sdk.stop().await.unwrap();
     }
 

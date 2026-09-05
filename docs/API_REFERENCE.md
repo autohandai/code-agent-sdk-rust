@@ -1,5 +1,17 @@
 # API Reference
 
+## Step control
+
+`Agent::send_with_options(prompt, PromptOptions)` and
+`Agent::run_with_options(prompt, PromptOptions)` accept `stop_when`, a vector of
+`StopCondition` values. `is_step_count` and `has_tool_call` create common conditions.
+`SdkEvent::step_end()` decodes `StepEndEvent`; `RunResult::steps` contains persisted
+tool steps and `RunStatus::Stopped` identifies a resumable pause.
+
+`AutohandSdk::prompt` waits for terminal completion and returns the original RPC
+response. Prompt and stream APIs serialize turns, including cleanup. See
+[step control](step-control.md) for cancellation and failure behavior.
+
 ## `Config`
 
 Configuration used to start the Autohand CLI subprocess.
