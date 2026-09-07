@@ -1,5 +1,20 @@
 # Configuration
 
+## Process provider selection
+
+Set `Config.provider` to the canonical provider name (for example, `autohandai`).
+The SDK forwards it as `AUTOHAND_PROVIDER` after other environment overrides.
+With [CLI provider startup support](https://github.com/autohandai/code-cli/commit/240f071013316ebed4fcffb5af68f98cf2f8b2ff), this selects the provider ahead of global and workspace settings.
+When no provider is configured or inferred by the SDK, normal CLI environment
+and saved configuration selection apply. Older CLIs may ignore the override;
+use a CLI containing the linked change.
+
+Autohand AI inference credentials use `AUTOHAND_AI_API_KEY`,
+`AUTOHAND_AI_BASE_URL`, and `AUTOHAND_AI_PLAN`. Account authentication is
+separate, and configured feature gates still apply. The CLI retains saved
+provider settings and credentials when other settings are saved during the run.
+Restricted Blueprint and login profiles continue to reject provider overrides.
+
 `Config` mirrors the current CLI RPC launch surface, including bare mode,
 idle-logout control, session persistence/resume/continue/fork, AGENTS.md
 controls, token thresholds, skill sources, display language, prompt files, and

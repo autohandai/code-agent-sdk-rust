@@ -514,6 +514,9 @@ impl Config {
             }
         }
         env.extend(self.env.clone());
+        if let Some(provider) = &self.provider {
+            env.insert("AUTOHAND_PROVIDER".into(), provider.as_str().into());
+        }
         env
     }
 
@@ -832,6 +835,10 @@ mod tests {
         }
         config.env.insert("AUTOHAND_AI_PLAN".into(), "max".into());
         let env = config.cli_env();
+        assert_eq!(
+            env.get("AUTOHAND_PROVIDER").map(String::as_str),
+            Some("autohandai")
+        );
         assert_eq!(
             env.get("AUTOHAND_AI_API_KEY").map(String::as_str),
             Some("key")

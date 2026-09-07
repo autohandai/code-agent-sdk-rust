@@ -112,13 +112,14 @@ async fn current_harness_persists_tool_results_across_stop_and_resume() {
     let workspace = tempdir().unwrap();
     fs::write(workspace.path().join("evidence.txt"), "sdk-parity-evidence").unwrap();
     let config_file = workspace.path().join("config.json");
+    let base_url = format!("http://{}", provider.address);
     fs::write(&config_file, json!({
-        "auth":{"token":"sdk-fixture-key"},"provider":"autohandai",
+        "auth":{"token":"sdk-fixture-key"},"provider":"openrouter",
+        "openrouter":{"baseUrl":format!("{base_url}/unused"),"apiKey":"saved-provider-key"},
         "autohandai":{"model":"fantail","plan":"cloud","authMode":"api-key","contextWindow":200000},
         "features":{"autohand_inference":true,"automaticSpecialists":false},
         "telemetry":{"enabled":false}
     }).to_string()).unwrap();
-    let base_url = format!("http://{}", provider.address);
     let mut config = Config::default().with_cli_path(cli);
     config.cwd = Some(workspace.path().to_path_buf());
     config.provider = Some(ProviderName::AutohandAi);
@@ -181,4 +182,10 @@ async fn current_harness_persists_tool_results_across_stop_and_resume() {
             .contains("sdk-parity-evidence"));
     }
     agent.close().await.unwrap();
+    let saved: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(config_file).unwrap()).unwrap();
+    assert_eq!(saved["provider"], "openrouter");
+    assert_eq!(saved["openrouter"]["apiKey"], "saved-provider-key");
+    assert!(saved["autohandai"].get("apiKey").is_none());
+    assert!(saved["autohandai"].get("baseUrl").is_none());
 }
