@@ -83,6 +83,50 @@ done
 }
 
 #[tokio::test]
+async fn discovers_effective_agents_through_spawned_cli() {
+    let mut fixture = CurrentCliFixture::start(
+        r#"{"agents":[{"id":"reviewer","name":"reviewer","description":"Review changes","tools":["read_file"],"model":"fantail","source":"extension","extensionId":"example.review","extensionVersion":"1.0.0","extensionScope":"project"}]}"#,
+        "",
+    ).await;
+    let agents = fixture
+        .sdk
+        .supported_agents()
+        .await
+        .expect("discover agents");
+    assert_eq!(agents.len(), 1);
+    assert_eq!(agents[0].id, "reviewer");
+    assert_eq!(agents[0].tools, ["read_file"]);
+    assert_eq!(agents[0].model.as_deref(), Some("fantail"));
+    assert_eq!(agents[0].extension_id.as_deref(), Some("example.review"));
+    assert_eq!(agents[0].extension_version.as_deref(), Some("1.0.0"));
+    assert_eq!(agents[0].source.as_deref(), Some("extension"));
+    assert_eq!(
+        serde_json::to_value(agents[0].extension_scope).unwrap(),
+        "project"
+    );
+    fixture.assert_request("autohand.getSupportedAgents", &[r#""params":{}"#]);
+    fixture.sdk.stop().await.expect("stop fixture SDK");
+}
+
+#[tokio::test]
+async fn rejects_malformed_agent_discovery_results() {
+    for result in [
+        r#"{}"#,
+        r#"{"agents":null}"#,
+        r#"{"agents":[{}]}"#,
+        r#"{"agents":[{"id":"one","name":"one","description":"Agent","tools":[1]}]}"#,
+        r#"{"agents":[{"id":"one","name":"one","description":"Agent","tools":[],"extensionScope":"invalid"}]}"#,
+    ] {
+        let mut fixture = CurrentCliFixture::start(result, "").await;
+        assert!(
+            fixture.sdk.supported_agents().await.is_err(),
+            "accepted: {result}"
+        );
+        fixture.sdk.stop().await.expect("stop fixture SDK");
+    }
+}
+
+#[tokio::test]
 async fn acknowledges_permission_through_spawned_cli() {
     let mut fixture = CurrentCliFixture::start(r#"{"success":true}"#, "").await;
     let result = fixture

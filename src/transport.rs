@@ -287,6 +287,14 @@ impl AutohandSdk {
         self.stream_prompt(command, PromptOptions::default()).await
     }
 
+    /// Return effective subagents, including inline and enabled extension agents.
+    pub async fn supported_agents(&self) -> Result<Vec<crate::AgentInfo>> {
+        let result: crate::GetSupportedAgentsResult = self
+            .request_typed("autohand.getSupportedAgents", json!({}))
+            .await?;
+        Ok(result.agents)
+    }
+
     pub async fn supported_commands(&self) -> Result<Vec<String>> {
         let value = self
             .request("autohand.getSupportedCommands", json!({}))
@@ -1276,7 +1284,13 @@ impl TransportInner {
         let settled = time::timeout(Duration::from_secs(2), async {
             self.request("autohand.abort", json!({})).await?;
             loop {
-                let event = events.recv().await.map_err(|_| Error::ChannelClosed)?;
+                let event = match events.recv().await {
+                    Ok(event) => event,
+                    // The caller already receives the overflow error; cleanup must
+                    // still drain through the abort's terminal acknowledgement.
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => return Err(Error::ChannelClosed),
+                };
                 if is_final_stream_event(&event) {
                     return Ok::<_, Error>(());
                 }
