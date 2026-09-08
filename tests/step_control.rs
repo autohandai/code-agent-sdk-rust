@@ -53,7 +53,6 @@ while IFS= read -r line; do
             *flood*|*overflow*)
               i=0
               limit=300
-              case "$line" in *overflow*) limit=900 ;; esac
               while [ "$i" -lt "$limit" ]; do
                 printf '%s\n' '{"jsonrpc":"2.0","method":"autohand.messageUpdate","params":{"delta":"x"}}'
                 i=$((i + 1))
@@ -64,6 +63,16 @@ while IFS= read -r line; do
         *hold*) : ;;
         *) printf '%s\n' '{"jsonrpc":"2.0","method":"autohand.messageEnd","params":{"content":"continued"}}'; finish completed ;;
       esac ;;
+    *autohand.getState*)
+      if [ "$mode" = overflow ]; then
+        # The test requests state only after filling the public receiver.
+        i=0
+        while [ "$i" -lt 900 ]; do
+          printf '%s\n' '{"jsonrpc":"2.0","method":"autohand.messageUpdate","params":{"delta":"x"}}'
+          i=$((i + 1))
+        done
+      fi
+      printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
     *autohand.stepDecision*)
       if [ "$mode" = rejected ]; then
         printf '{"jsonrpc":"2.0","id":%s,"result":{"success":false}}\n' "$id"
@@ -308,9 +317,11 @@ async fn pending_error_delivery_does_not_hold_the_next_turn() {
         .await
         .unwrap();
     timeout(Duration::from_secs(3), async {
-        while !directory.path().join("overflow.jsonl.flooded").exists() {
+        while first.len() != 256 {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
+        // Its acknowledgement follows the broadcast overflow on stdout.
+        sdk.get_state().await.unwrap();
     })
     .await
     .unwrap();
