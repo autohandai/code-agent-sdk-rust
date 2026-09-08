@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Rust build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up stable Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt
+
+      - name: Check formatting
+        run: cargo +stable fmt --check
+
+      - name: Test SDK and compile examples
+        run: cargo +stable test --all-targets
+
+      - name: Verify package builds
+        run: cargo +stable package
+
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'Linux'
+        with:
+          name: code-agent-sdk-rust
+          path: target/package/*.crate
+          if-no-files-found: error
+
+  msrv:
+    name: Rust 1.76 consumer
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up minimum supported Rust
+        run: rustup toolchain install 1.76.0 --profile minimal
+
+      - name: Check consumer with locked compatible dependencies
+        run: cargo +1.76.0 check --manifest-path tests/msrv-consumer/Cargo.toml --locked

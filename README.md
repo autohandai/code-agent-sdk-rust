@@ -206,6 +206,11 @@ measurement.
 
 ## Development
 
+GitHub CI checks formatting, runs tests and compiles examples on Linux, macOS,
+and Windows, then verifies the packaged crate builds. A separate job checks the
+Rust 1.76 consumer with its committed lockfile. Dependabot checks GitHub Actions
+versions weekly.
+
 ```bash
 cargo fmt --check
 cargo test

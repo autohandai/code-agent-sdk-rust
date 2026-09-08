@@ -1276,7 +1276,13 @@ impl TransportInner {
         let settled = time::timeout(Duration::from_secs(2), async {
             self.request("autohand.abort", json!({})).await?;
             loop {
-                let event = events.recv().await.map_err(|_| Error::ChannelClosed)?;
+                let event = match events.recv().await {
+                    Ok(event) => event,
+                    // Notifications can overflow again while abort is acknowledged.
+                    // Keep draining to a terminal within the original deadline.
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => return Err(Error::ChannelClosed),
+                };
                 if is_final_stream_event(&event) {
                     return Ok::<_, Error>(());
                 }
@@ -1911,6 +1917,15 @@ mod tests {
 
     #[tokio::test]
     async fn streams_events_from_fake_cli() {
+        for (method, event_type) in [
+            ("autohand.turnEnd", "turn_end"),
+            ("autohand.agentEnd", "agent_end"),
+        ] {
+            assert_streams_events_from_fake_cli(method, event_type).await;
+        }
+    }
+
+    async fn assert_streams_events_from_fake_cli(terminal_method: &str, terminal_type: &str) {
         let dir = tempdir().unwrap();
         let cli = dir.path().join("fake-autohand");
         fs::write(
@@ -1927,9 +1942,8 @@ while IFS= read -r line; do
       printf '{"jsonrpc":"2.0","id":%s,"result":{"ok":true}}\n' "$permission_id"
       printf '%s\n' '{"jsonrpc":"2.0","method":"autohand.messageUpdate","params":{"type":"message_update","delta":"hello"}}'
       printf '%s\n' '{"jsonrpc":"2.0","method":"autohand.messageEnd","params":{"type":"message_end","content":"hello"}}'
-      printf '%s\n' '{"jsonrpc":"2.0","method":"autohand.turnEnd","params":{"type":"turn_end"}}'
+      printf '{"jsonrpc":"2.0","method":"%s","params":{"type":"%s"}}\n' "$AUTOHAND_TEST_TERMINAL_METHOD" "$AUTOHAND_TEST_TERMINAL_TYPE"
       printf '{"jsonrpc":"2.0","id":%s,"result":{"ok":true}}\n' "$prompt_id"
-      printf '%s\n' '{"jsonrpc":"2.0","method":"autohand.agentEnd","params":{"type":"agent_end"}}'
       ;;
     *)
       printf '{"jsonrpc":"2.0","id":%s,"result":{"ok":true}}\n' "$id"
@@ -1943,7 +1957,15 @@ done
         perms.set_mode(0o755);
         fs::set_permissions(&cli, perms).unwrap();
 
-        let mut sdk = AutohandSdk::new(Config::default().with_cli_path(&cli));
+        let mut config = Config::default().with_cli_path(&cli);
+        config.env.insert(
+            "AUTOHAND_TEST_TERMINAL_METHOD".into(),
+            terminal_method.into(),
+        );
+        config
+            .env
+            .insert("AUTOHAND_TEST_TERMINAL_TYPE".into(), terminal_type.into());
+        let mut sdk = AutohandSdk::new(config);
         sdk.start().await.unwrap();
         let mut events = sdk
             .stream_prompt("hello", PromptOptions::default())
@@ -1968,9 +1990,15 @@ done
         sdk.stop().await.unwrap();
         assert_eq!(text, "hello");
         assert!(answered_permission);
-        assert!(event_types.iter().any(|kind| kind == "message_end"));
-        assert!(event_types.iter().any(|kind| kind == "turn_end"));
-        assert_eq!(event_types.last().map(String::as_str), Some("agent_end"));
+        assert_eq!(
+            event_types,
+            [
+                "permission_request",
+                "message_update",
+                "message_end",
+                terminal_type
+            ]
+        );
     }
 
     fn write_fake_cli(path: &std::path::Path, body: &str) {
