@@ -14,6 +14,9 @@
 
 ### Added
 
+- A typed async `WekaClient` for structured `noul`, `choice`, and `score`
+  decisions through `/v1/decisions`, including request/response validation,
+  safe HTTP errors, and a runnable example.
 - Resumable host step control with typed tool-step records, synchronous and
   asynchronous predicates, `is_step_count`, and `has_tool_call`.
 - `Agent::send_with_options`, `Agent::run_with_options`, and `RunResult::steps`.
