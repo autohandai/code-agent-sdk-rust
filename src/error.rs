@@ -48,6 +48,11 @@ pub enum Error {
     EventStreamLagged { count: u64 },
     #[error("invalid input: {0}")]
     InvalidInput(String),
+    #[error("Weka request failed with HTTP {status}")]
+    WekaRequest {
+        status: u16,
+        request_id: Option<String>,
+    },
     #[error("{profile} profile does not allow RPC method {method}")]
     ProfileViolation {
         profile: &'static str,
@@ -59,6 +64,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("HTTP error: {0}")]
+    Http(#[from] reqwest::Error),
     #[error("channel closed")]
     ChannelClosed,
     #[error("agent stream ended without a terminal event")]

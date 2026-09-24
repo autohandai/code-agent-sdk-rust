@@ -14,6 +14,7 @@ mod goal;
 mod json_output;
 mod step_control;
 mod transport;
+mod weka;
 
 pub use agent::{Agent, JsonRunOptions, Run, RunResult, RunStatus};
 pub use automode::*;
@@ -37,6 +38,7 @@ pub use step_control::{
     StopCondition, StopConditionContext,
 };
 pub use transport::AutohandSdk;
+pub use weka::*;
 
 /// Performs idempotent eager initialization of the public SDK runtime.
 pub fn initialize() {

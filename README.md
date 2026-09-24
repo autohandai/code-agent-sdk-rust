@@ -32,6 +32,7 @@ Use it when you want to embed Autohand inside a Rust service, developer tool, CL
 - Current session, AGENTS.md, token, skill-source, prompt-file, MCP, agent, and plugin flags
 - Startup feature settings, typed turn usage, and AutohandAI environment support
 - Typed community-skill discovery/installation and MCP server/tool/configuration inspection
+- Typed Weka `noul`, `choice`, and `score` decisions over the Autohand API
 - Transactional, clone-safe lifecycle state and deterministic sub-50 ms startup gates
 - A closed Blueprint answer-only profile with classified inputs, strict JSON
   results, passive runtime facts, deny-all child egress, and bounded capture
@@ -134,6 +135,43 @@ async fn main() -> Result<()> {
 }
 ```
 
+## Weka structured decisions
+
+`WekaClient` calls the Autohand decision API directly and does not start a CLI
+subprocess. It reads `AUTOHAND_AI_API_KEY` or `AUTOHAND_API_KEY` by default:
+
+```rust
+use std::collections::BTreeMap;
+
+use autohand_sdk::{WekaAnswer, WekaClient, WekaDecisionRequest, WekaQuestion};
+use serde_json::json;
+
+let request = WekaDecisionRequest::new(
+    json!({"tests": "passed", "changed_systems": ["checkout"]}),
+    BTreeMap::from([(
+        "release_lane".to_owned(),
+        WekaQuestion::choice(
+            "Choose the safest release lane.",
+            BTreeMap::from([
+                ("stable".to_owned(), json!("Healthy checks and low impact.")),
+                ("canary".to_owned(), json!("Healthy checks with elevated impact.")),
+                ("blocked".to_owned(), json!("A required check failed.")),
+            ]),
+        )?,
+    )]),
+)?;
+
+let response = WekaClient::from_env()?.decide(&request).await?;
+if let WekaAnswer::Choice { choice, .. } = &response.answers["release_lane"] {
+    println!("{choice}");
+}
+```
+
+The response is checked against the questions that were sent. Unknown choices,
+missing answers, invalid probabilities, and malformed usage data return a
+protocol error. HTTP failures return `Error::WekaRequest` with the status and
+request ID without including the response body.
+
 ## Examples
 
 The `examples/` directory mirrors the TypeScript SDK example inventory:
@@ -155,6 +193,7 @@ The `examples/` directory mirrors the TypeScript SDK example inventory:
 - `24-high-level-agent.rs`
 - `25-structured-json.rs`
 - `27-autoresearch-ledger.rs`
+- `29-weka-decisions.rs`
 - `basic-agent.rs`
 - `basic-usage.rs`
 - `loop-strategies.rs`
