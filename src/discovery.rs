@@ -2,6 +2,38 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+/// Metadata for an effective subagent in the running CLI session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInfo {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub tools: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension_scope: Option<AgentExtensionScope>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentExtensionScope {
+    User,
+    Project,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetSupportedAgentsResult {
+    pub agents: Vec<AgentInfo>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommunitySkill {

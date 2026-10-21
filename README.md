@@ -30,7 +30,9 @@ Use it when you want to embed Autohand inside a Rust service, developer tool, CL
 - Validated generic slash commands plus deep-research/autoresearch helpers
 - Seven typed persistent-goal RPCs and live command discovery
 - Current session, AGENTS.md, token, skill-source, prompt-file, MCP, agent, and plugin flags
-- Startup feature settings, typed turn usage, and AutohandAI environment support
+- Per-run startup settings for every native, custom, and extension provider, plus typed feature flags and turn usage
+- Browser capability negotiation, model/thinking controls, account/context inspection, and MCP server mutation
+- Canonical routing for all CLI notification methods with exact wire payloads and typed lifecycle accessors
 - Typed community-skill discovery/installation and MCP server/tool/configuration inspection
 - Typed Weka `noul`, `choice`, and `score` decisions over the Autohand API
 - Transactional, clone-safe lifecycle state and deterministic sub-50 ms startup gates
@@ -38,6 +40,8 @@ Use it when you want to embed Autohand inside a Rust service, developer tool, CL
   results, passive runtime facts, deny-all child egress, and bounded capture
 - A separate setup-only Autohand device-authorization profile that keeps
   private transaction state inside an opaque SDK handle
+
+See [current CLI parity](docs/current-cli-parity.md) for startup settings, fork references, runtime controls, and notification routing.
 
 ## Requirements
 
@@ -85,12 +89,12 @@ async fn main() -> Result<()> {
 
     while let Some(event) = run.next().await {
         match event? {
-            SdkEvent { event_type, raw } if event_type == "message_update" => {
+            SdkEvent { event_type, raw, .. } if event_type == "message_update" => {
                 if let Some(delta) = raw.get("delta").and_then(|value| value.as_str()) {
                     print!("{delta}");
                 }
             }
-            SdkEvent { event_type, raw } if event_type == "permission_request" => {
+            SdkEvent { event_type, raw, .. } if event_type == "permission_request" => {
                 eprintln!("permission requested: {raw}");
             }
             _ => {}
@@ -325,3 +329,5 @@ for the full security and lifecycle contract.
 - SDK docs: https://autohand.ai/docs/agent-sdk/
 - Issues: https://github.com/autohandai/code-agent-sdk-rust/issues
 - Security reports: security@autohand.ai
+
+See [CLI compatibility and migration notes](docs/cli-compatibility.md) for this unreleased source revision, including provider startup settings, complete notifications and ephemeral sessions.

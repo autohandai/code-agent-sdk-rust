@@ -74,6 +74,7 @@ pub enum ProviderName {
     Ollama,
     LlamaCpp,
     OpenAi,
+    Anthropic,
     Mlx,
     LlmGateway,
     Azure,
@@ -95,6 +96,7 @@ impl ProviderName {
             Self::Ollama => "ollama",
             Self::LlamaCpp => "llamacpp",
             Self::OpenAi => "openai",
+            Self::Anthropic => "anthropic",
             Self::Mlx => "mlx",
             Self::LlmGateway => "llmgateway",
             Self::Azure => "azure",
@@ -147,11 +149,17 @@ pub struct Config {
     pub auto_skill: bool,
     pub auto_commit: bool,
     pub context_compact: Option<bool>,
+    /// Keep this run out of session history and synchronization.
+    pub ephemeral: bool,
+    /// Legacy compatibility field; use `ephemeral` to disable persistence.
     pub persist_session: bool,
     pub session_id: Option<String>,
     pub resume: bool,
     pub continue_session: bool,
+    /// Legacy switch. Requires `session_id` or `session_path` as the fork source.
     pub fork: bool,
+    /// Session ID or path passed as the required value of `--fork`.
+    pub fork_session: Option<String>,
     pub session_path: Option<PathBuf>,
     pub auto_save_interval: Option<u32>,
     pub agents_md: Option<bool>,
@@ -185,6 +193,9 @@ pub struct Config {
     pub base_url: Option<String>,
     pub autohand_ai_plan: Option<String>,
     pub features: Option<FeatureFlagSettings>,
+    /// Per-run CLI settings, applied before profile and `--set` overrides.
+    /// Accepts provider sections, `features`, and `sessions.awareness`.
+    pub run_settings: Option<Map<String, Value>>,
     pub extra_args: Vec<String>,
     pub env: BTreeMap<String, String>,
     pub runtime_profile: RuntimeProfile,
@@ -211,11 +222,13 @@ impl Default for Config {
             auto_skill: false,
             auto_commit: false,
             context_compact: None,
+            ephemeral: false,
             persist_session: false,
             session_id: None,
             resume: false,
             continue_session: false,
             fork: false,
+            fork_session: None,
             session_path: None,
             auto_save_interval: None,
             agents_md: None,
@@ -249,6 +262,7 @@ impl Default for Config {
             base_url: None,
             autohand_ai_plan: None,
             features: None,
+            run_settings: None,
             extra_args: Vec::new(),
             env: BTreeMap::new(),
             runtime_profile: RuntimeProfile::Interactive,
@@ -336,6 +350,9 @@ impl Config {
 
     pub(crate) fn cli_args(&self) -> Vec<String> {
         let mut args = vec!["--mode".to_string(), "rpc".to_string()];
+        if self.ephemeral {
+            args.push("--ephemeral".into());
+        }
         match self.runtime_profile {
             RuntimeProfile::Interactive => {}
             RuntimeProfile::AnswerOnly(_) => {
@@ -363,7 +380,7 @@ impl Config {
         push_flag(&mut args, self.unrestricted, "--unrestricted");
         push_flag(&mut args, self.auto_mode, "--auto-mode");
         push_flag(&mut args, self.auto_skill, "--auto-skill");
-        push_flag(&mut args, self.auto_commit, "-c");
+        push_flag(&mut args, self.auto_commit, "--auto-commit");
         if self.idle_logout == Some(false) {
             args.push("--no-idle-logout".into());
         }
@@ -372,19 +389,27 @@ impl Config {
             Some(false) => args.push("--no-context-compact".to_string()),
             None => {}
         }
-        push_flag(&mut args, self.persist_session, "--persist-session");
-        push_value(&mut args, "--session-id", self.session_id.as_deref());
-        push_flag(&mut args, self.resume, "--resume");
-        push_flag(&mut args, self.continue_session, "--continue");
-        push_flag(&mut args, self.fork, "--fork");
-        push_value(
-            &mut args,
-            "--session-path",
-            self.session_path
-                .as_ref()
-                .map(|p| p.to_string_lossy())
-                .as_deref(),
-        );
+        if let Some(source) = self.fork_source() {
+            push_value(&mut args, "--fork", Some(source));
+        } else if let Some(reference) =
+            self.session_id.as_deref().map(str::to_owned).or_else(|| {
+                self.session_path
+                    .as_ref()
+                    .map(|path| path.to_string_lossy().into_owned())
+            })
+        {
+            push_value(
+                &mut args,
+                "--sdk-session-reference",
+                Some(reference.as_str()),
+            );
+        } else {
+            push_flag(
+                &mut args,
+                self.resume || self.continue_session,
+                "--sdk-resume-last",
+            );
+        }
         push_value(&mut args, "--auto-save-interval", self.auto_save_interval);
         match self.agents_md {
             Some(true) => args.push("--agents-md".into()),
@@ -483,12 +508,20 @@ impl Config {
         push_value(&mut args, "--model", self.model.as_deref());
         push_value(&mut args, "--temperature", self.temperature);
         push_value(&mut args, "--yolo", self.yolo.as_deref());
-        push_value(&mut args, "--yolo-timeout", self.yolo_timeout_seconds);
+        push_value(&mut args, "--timeout", self.yolo_timeout_seconds);
         for directory in &self.additional_directories {
             args.push("--add-dir".to_string());
             args.push(directory.display().to_string());
         }
         if self.runtime_profile == RuntimeProfile::Interactive {
+            if self.run_settings_envelope().is_some()
+                || self
+                    .env
+                    .get("AUTOHAND_RUN_SETTINGS")
+                    .is_some_and(|value| !value.is_empty())
+            {
+                args.extend(["--sdk-settings-version".into(), "1".into()]);
+            }
             args.extend(self.extra_args.iter().cloned());
         }
         args
@@ -500,12 +533,9 @@ impl Config {
             env.insert("AUTOHAND_STREAM_TOOL_OUTPUT".into(), "1".into());
         }
         if self.provider == Some(ProviderName::AutohandAi) {
-            env.insert(
-                "AUTOHAND_AI_PLAN".into(),
-                self.autohand_ai_plan
-                    .clone()
-                    .unwrap_or_else(|| "cloud".into()),
-            );
+            if let Some(plan) = &self.autohand_ai_plan {
+                env.insert("AUTOHAND_AI_PLAN".into(), plan.clone());
+            }
             if let Some(value) = &self.api_key {
                 env.insert("AUTOHAND_AI_API_KEY".into(), value.clone());
             }
@@ -517,7 +547,120 @@ impl Config {
         if let Some(provider) = &self.provider {
             env.insert("AUTOHAND_PROVIDER".into(), provider.as_str().into());
         }
+        if let Some(settings) = self.run_settings_envelope() {
+            env.insert(
+                "AUTOHAND_RUN_SETTINGS".into(),
+                Value::Object(settings).to_string(),
+            );
+        }
         env
+    }
+
+    fn fork_source(&self) -> Option<&str> {
+        self.fork_session.as_deref().or_else(|| {
+            if self.fork {
+                self.session_id
+                    .as_deref()
+                    .or_else(|| self.session_path.as_ref().and_then(|path| path.to_str()))
+            } else {
+                None
+            }
+        })
+    }
+
+    fn run_settings_envelope(&self) -> Option<Map<String, Value>> {
+        let mut settings = self.run_settings.clone().unwrap_or_default();
+        if let Some(features) = &self.features {
+            if let Ok(Value::Object(overrides)) = serde_json::to_value(features) {
+                merge_object(
+                    settings
+                        .entry("features")
+                        .or_insert_with(|| Value::Object(Map::new())),
+                    overrides,
+                );
+            }
+        }
+        if let Some(provider) = &self.provider {
+            let name = provider.as_str();
+            let mut overrides = Map::new();
+            if let Some(model) = &self.model {
+                overrides.insert("model".into(), Value::String(model.clone()));
+            }
+            if let Some(key) = &self.api_key {
+                let key_field = if name == "vertexai" {
+                    "authToken"
+                } else {
+                    "apiKey"
+                };
+                overrides.insert(key_field.into(), Value::String(key.clone()));
+                match name {
+                    "autohandai" | "openai" | "xai" => {
+                        overrides.insert("authMode".into(), Value::String("api-key".into()));
+                    }
+                    "azure" => {
+                        overrides.insert("authMethod".into(), Value::String("api-key".into()));
+                    }
+                    "bedrock" => {
+                        overrides
+                            .insert("authMode".into(), Value::String("bedrock-api-key".into()));
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(url) = &self.base_url {
+                let (field, value) = match name {
+                    "vertexai" => ("endpoint", vertex_endpoint(url).unwrap_or(url)),
+                    "bedrock" => ("endpoint", url.as_str()),
+                    _ => ("baseUrl", url.as_str()),
+                };
+                overrides.insert(field.into(), Value::String(value.into()));
+            }
+            if name == "autohandai" {
+                if let Some(plan) = &self.autohand_ai_plan {
+                    overrides.insert("plan".into(), Value::String(plan.clone()));
+                } else if (self.api_key.is_some() || self.base_url.is_some())
+                    && settings
+                        .get("autohandai")
+                        .and_then(|value| value.get("plan"))
+                        .is_none()
+                {
+                    overrides.insert("plan".into(), Value::String("cloud".into()));
+                }
+            }
+            if !overrides.is_empty() {
+                let section = if let Some(id) = name.strip_prefix("custom:") {
+                    settings
+                        .entry("customProviders")
+                        .or_insert_with(|| Value::Object(Map::new()))
+                        .as_object_mut()
+                        .map(|providers| {
+                            providers
+                                .entry(id)
+                                .or_insert_with(|| Value::Object(Map::new()))
+                        })
+                } else if name.starts_with("extension:") {
+                    settings
+                        .entry("extensionProviders")
+                        .or_insert_with(|| Value::Object(Map::new()))
+                        .as_object_mut()
+                        .map(|providers| {
+                            providers
+                                .entry(name)
+                                .or_insert_with(|| Value::Object(Map::new()))
+                        })
+                } else {
+                    Some(
+                        settings
+                            .entry(name)
+                            .or_insert_with(|| Value::Object(Map::new())),
+                    )
+                };
+                if let Some(section) = section {
+                    merge_object(section, overrides);
+                }
+            }
+        }
+        (!settings.is_empty()).then_some(settings)
     }
 
     pub(crate) fn inherited_environment(&self) -> BTreeMap<String, String> {
@@ -534,6 +677,12 @@ impl Config {
     }
 
     pub(crate) fn validate(&self) -> Result<(), String> {
+        if matches!(self.runtime_profile, RuntimeProfile::Interactive) {
+            let generated_args = self.cli_args();
+            validate_generated_cli_arguments(
+                &generated_args[..generated_args.len() - self.extra_args.len()],
+            )?;
+        }
         match self.runtime_profile {
             RuntimeProfile::Interactive => {
                 if self.network_policy != ChildNetworkPolicy::Inherit {
@@ -564,6 +713,47 @@ impl Config {
                 self.validate_restricted_profile("setup-only")?;
             }
         }
+        if (self.fork || self.fork_session.is_some())
+            && self
+                .fork_source()
+                .map_or(true, |source| source.trim().is_empty())
+        {
+            return Err(
+                "fork requires fork_session, session_id, or session_path as its source".into(),
+            );
+        }
+        if (self.api_key.is_some() || self.base_url.is_some()) && self.provider.is_none() {
+            return Err("api_key and base_url require an explicit provider".into());
+        }
+        if self.provider == Some(ProviderName::VertexAi) {
+            if let Some(url) = &self.base_url {
+                vertex_endpoint(url)?;
+            }
+        }
+        if let Some(settings) = &self.run_settings {
+            validate_run_settings(settings)?;
+        }
+        if let Some(provider) = &self.provider {
+            let name = provider.as_str();
+            if !(NATIVE_PROVIDERS.contains(&name)
+                || name
+                    .strip_prefix("custom:")
+                    .is_some_and(|id| !id.trim().is_empty())
+                || name
+                    .strip_prefix("extension:")
+                    .is_some_and(|id| !id.trim().is_empty()))
+            {
+                return Err(
+                    "provider must be a native provider, custom:<id>, or extension:<id>".into(),
+                );
+            }
+            if name.split(['.', ':']).any(forbidden_setting_segment) {
+                return Err("provider ID contains an unsafe settings path segment".into());
+            }
+        }
+        if let Some(settings) = self.run_settings_envelope() {
+            validate_run_settings(&settings)?;
+        }
         if self.max_events == 0
             || self.max_event_bytes == 0
             || self.max_stdout_bytes == 0
@@ -587,11 +777,13 @@ impl Config {
             || self.auto_skill
             || self.auto_commit
             || self.context_compact.is_some()
+            || self.ephemeral
             || self.persist_session
             || self.session_id.is_some()
             || self.resume
             || self.continue_session
             || self.fork
+            || self.fork_session.is_some()
             || self.session_path.is_some()
             || self.auto_save_interval.is_some()
             || self.agents_md.is_some()
@@ -625,6 +817,7 @@ impl Config {
             || self.base_url.is_some()
             || self.autohand_ai_plan.is_some()
             || self.features.is_some()
+            || self.run_settings.is_some()
             || !self.env.is_empty()
         {
             return Err(format!(
@@ -661,6 +854,111 @@ impl Config {
         }
         Ok(())
     }
+}
+
+const NATIVE_PROVIDERS: &[&str] = &[
+    "autohandai",
+    "openrouter",
+    "ollama",
+    "llamacpp",
+    "openai",
+    "anthropic",
+    "mlx",
+    "llmgateway",
+    "azure",
+    "zai",
+    "sakana",
+    "xai",
+    "cerebras",
+    "deepseek",
+    "vertexai",
+    "nvidia",
+    "bedrock",
+];
+
+fn vertex_endpoint(value: &str) -> Result<&str, String> {
+    let endpoint = value
+        .strip_prefix("https://")
+        .unwrap_or(value)
+        .trim_end_matches('/');
+    if endpoint.is_empty()
+        || endpoint
+            .chars()
+            .any(|ch| matches!(ch, '/' | '?' | '#' | '@' | '\\') || ch.is_whitespace())
+    {
+        return Err("Vertex AI base_url must be a hostname or HTTPS origin without a path; use run_settings.vertexai for project and region".into());
+    }
+    Ok(endpoint)
+}
+
+fn merge_object(target: &mut Value, overrides: Map<String, Value>) {
+    if let Some(object) = target.as_object_mut() {
+        for (key, value) in overrides {
+            if let Value::Object(nested) = value {
+                merge_object(
+                    object
+                        .entry(key)
+                        .or_insert_with(|| Value::Object(Map::new())),
+                    nested,
+                );
+            } else {
+                object.insert(key, value);
+            }
+        }
+    }
+}
+
+fn forbidden_setting_segment(segment: &str) -> bool {
+    matches!(segment, "__proto__" | "prototype" | "constructor")
+}
+
+fn validate_run_settings(settings: &Map<String, Value>) -> Result<(), String> {
+    fn validate_keys(value: &Value) -> Result<(), String> {
+        match value {
+            Value::Object(object) => {
+                for (key, value) in object {
+                    if key.split(['.', ':']).any(forbidden_setting_segment) {
+                        return Err("run_settings contains an unsafe settings path segment".into());
+                    }
+                    validate_keys(value)?;
+                }
+            }
+            Value::Array(items) => {
+                for value in items {
+                    validate_keys(value)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    for (section, value) in settings {
+        if !NATIVE_PROVIDERS.contains(&section.as_str())
+            && !matches!(
+                section.as_str(),
+                "customProviders" | "extensionProviders" | "features" | "sessions"
+            )
+        {
+            return Err(format!(
+                "run_settings does not accept the {section} section"
+            ));
+        }
+        let object = value
+            .as_object()
+            .ok_or_else(|| format!("run_settings.{section} must be an object"))?;
+        if section == "sessions" && object.keys().any(|key| key != "awareness") {
+            return Err("run_settings.sessions accepts only awareness".into());
+        }
+        if matches!(section.as_str(), "customProviders" | "extensionProviders")
+            && object.values().any(|entry| !entry.is_object())
+        {
+            return Err(format!(
+                "run_settings.{section} provider entries must be objects"
+            ));
+        }
+        validate_keys(value)?;
+    }
+    Ok(())
 }
 
 fn restricted_environment_name_is_forbidden(name: &str) -> bool {
@@ -787,11 +1085,130 @@ mod tests {
     }
 
     #[test]
+    fn startup_merges_only_explicit_provider_leaves_and_selects_supplied_key_auth() {
+        use serde_json::{json, Value};
+        for (provider, name, saved_auth) in [
+            (ProviderName::OpenAi, "openai", "chatgpt"),
+            (ProviderName::Xai, "xai", "oauth"),
+            (ProviderName::AutohandAi, "autohandai", "account"),
+        ] {
+            let config = Config {
+                provider: Some(provider),
+                api_key: Some("explicit-key".into()),
+                run_settings: json!({name:{"authMode":saved_auth,"plan":"local","other":false}})
+                    .as_object()
+                    .cloned(),
+                ..Config::default()
+            };
+            let env = config.cli_env();
+            let overlay: Value = serde_json::from_str(&env["AUTOHAND_RUN_SETTINGS"]).unwrap();
+            assert_eq!(overlay[name]["authMode"], "api-key");
+            assert_eq!(overlay[name]["apiKey"], "explicit-key");
+            assert_eq!(overlay[name]["plan"], "local");
+            assert_eq!(overlay[name]["other"], false);
+        }
+        let config = Config {
+            provider: Some(ProviderName::Custom("custom:team.provider".into())),
+            model: Some("new-model".into()),
+            run_settings: json!({"customProviders":{"team.provider":{"model":"old-model","disabled":false},"other":{"model":"keep"}}}).as_object().cloned(),
+            ..Config::default()
+        };
+        let env = config.cli_env();
+        let overlay: Value = serde_json::from_str(&env["AUTOHAND_RUN_SETTINGS"]).unwrap();
+        assert_eq!(
+            overlay["customProviders"]["team.provider"],
+            json!({"model":"new-model","disabled":false})
+        );
+        assert_eq!(overlay["customProviders"]["other"]["model"], "keep");
+    }
+
+    #[test]
+    fn native_provider_auth_and_endpoint_fields_match_cli_clients() {
+        use serde_json::{json, Value};
+        for (provider, name, expected) in [
+            (
+                ProviderName::Azure,
+                "azure",
+                json!({"apiKey":"key","authMethod":"api-key","baseUrl":"https://provider.test/"}),
+            ),
+            (
+                ProviderName::Bedrock,
+                "bedrock",
+                json!({"apiKey":"key","authMode":"bedrock-api-key","endpoint":"https://provider.test/"}),
+            ),
+            (
+                ProviderName::VertexAi,
+                "vertexai",
+                json!({"authToken":"key","endpoint":"provider.test"}),
+            ),
+        ] {
+            let config = Config {
+                provider: Some(provider),
+                api_key: Some("key".into()),
+                base_url: Some("https://provider.test/".into()),
+                ..Config::default()
+            };
+            config.validate().unwrap();
+            let env = config.cli_env();
+            let overlay: Value = serde_json::from_str(&env["AUTOHAND_RUN_SETTINGS"]).unwrap();
+            assert_eq!(overlay[name], expected);
+        }
+        for endpoint in [
+            "http://vertex.test",
+            "https://vertex.test/custom/path",
+            "https://user@vertex.test",
+            "https://vertex.test?key=value",
+        ] {
+            assert!(Config {
+                provider: Some(ProviderName::VertexAi),
+                base_url: Some(endpoint.into()),
+                ..Config::default()
+            }
+            .validate()
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn selecting_autohand_without_overrides_preserves_the_saved_plan() {
+        let config = Config {
+            provider: Some(ProviderName::AutohandAi),
+            ..Config::default()
+        };
+        assert!(!config.cli_env().contains_key("AUTOHAND_AI_PLAN"));
+    }
+
+    #[test]
+    fn translates_sdk_session_references_to_current_rpc_arguments() {
+        let config = Config {
+            session_id: Some("saved".into()),
+            persist_session: true,
+            ..Config::default()
+        };
+        assert_eq!(
+            config.cli_args(),
+            ["--mode", "rpc", "--sdk-session-reference", "saved"]
+        );
+        let config = Config {
+            resume: true,
+            ..Config::default()
+        };
+        assert_eq!(config.cli_args(), ["--mode", "rpc", "--sdk-resume-last"]);
+        let config = Config {
+            fork: true,
+            session_id: Some("saved".into()),
+            ..Config::default()
+        };
+        assert_eq!(config.cli_args(), ["--mode", "rpc", "--fork", "saved"]);
+    }
+
+    #[test]
     fn builds_current_runtime_flags_and_autohand_ai_environment() {
         let mut config = Config {
             bare: true,
             idle_logout: Some(false),
             fork: true,
+            session_id: Some("source-session".into()),
             agents_md: Some(false),
             skill_sources: vec!["user".into(), "project".into()],
             install_missing_skills: true,
@@ -848,5 +1265,123 @@ mod tests {
             Some("https://api")
         );
         assert_eq!(env.get("AUTOHAND_AI_PLAN").map(String::as_str), Some("max"));
+    }
+}
+
+#[cfg(test)]
+mod cli_compatibility_tests {
+    use super::*;
+    #[test]
+    fn obsolete_generated_options_fail_before_launch() {
+        let config = Config {
+            auto_save_interval: Some(30),
+            ..Config::default()
+        };
+        assert!(config
+            .validate()
+            .expect_err("unsupported option")
+            .contains("unsupported by the current CLI"));
+    }
+}
+
+fn validate_generated_cli_arguments(args: &[String]) -> Result<(), String> {
+    const UNSUPPORTED: &[&str] = &[
+        "--agents-md",
+        "--no-agents-md",
+        "--agents-md-create",
+        "--agents-md-auto-update",
+        "--agents-md-path",
+        "--auto-save-interval",
+        "--compression-threshold",
+        "--summarization-threshold",
+        "--skills",
+        "--skill-sources",
+        "--install-missing-skills",
+        "--permission-mode",
+        "--permission-allow-list",
+        "--permission-deny-list",
+    ];
+    const SWITCHES: &[&str] = &[
+        "--bare",
+        "--offline",
+        "--yes",
+        "--y",
+        "--dry-run",
+        "--debug",
+        "--auto-commit",
+        "-c",
+        "--unrestricted",
+        "--restricted",
+        "--plan",
+        "--answer-only",
+        "--setup-only",
+        "--no-idle-logout",
+        "--auto-skill",
+        "--learn",
+        "--learn-update",
+        "--project",
+        "--permissions",
+        "--settings",
+        "--traces-on",
+        "--traces-off",
+        "--login",
+        "--logout",
+        "--patch",
+        "--acp",
+        "--sdk-resume-last",
+        "--tmux",
+        "--auto-mode",
+        "--no-worktree",
+        "--interactive-on-complete",
+        "--setup",
+        "--about",
+        "--feedback",
+        "--cc",
+        "--context-compact",
+        "--no-cc",
+        "--no-context-compact",
+        "--ephemeral",
+    ];
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_str();
+        if UNSUPPORTED.contains(&argument) {
+            return Err(format!("{argument} is unsupported by the current CLI; use a supported CLI option or runtime RPC instead"));
+        }
+        index += if SWITCHES.contains(&argument) { 1 } else { 2 };
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod ephemeral_configuration_tests {
+    use super::*;
+    #[test]
+    fn ephemeral_is_an_explicit_opt_in() {
+        assert!(!Config::default()
+            .cli_args()
+            .iter()
+            .any(|arg| arg == "--ephemeral"));
+        let config = Config {
+            ephemeral: true,
+            ..Config::default()
+        };
+        assert!(config.cli_args().iter().any(|arg| arg == "--ephemeral"));
+    }
+}
+
+#[cfg(test)]
+mod continue_flag_tests {
+    use super::Config;
+    #[test]
+    fn auto_commit_uses_long_flag() {
+        let config = Config {
+            auto_commit: true,
+            ..Config::default()
+        };
+        let args = config.cli_args();
+        assert!(args.iter().any(|arg| arg == "--auto-commit"));
+        assert!(!args.iter().any(|arg| arg == "-c"));
+        assert!(config.validate().is_ok());
     }
 }

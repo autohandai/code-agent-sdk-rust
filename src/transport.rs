@@ -70,14 +70,6 @@ impl AutohandSdk {
             RuntimeProfile::Interactive => {
                 async {
                     inner.request("autohand.getState", json!({})).await?;
-                    if let Some(features) = &self.config.features {
-                        inner
-                            .request(
-                                "autohand.applyFlagSettings",
-                                json!({"settings":{"features":features}}),
-                            )
-                            .await?;
-                    }
                     Ok(())
                 }
                 .await
@@ -285,6 +277,14 @@ impl AutohandSdk {
     ) -> Result<tokio::sync::mpsc::Receiver<Result<SdkEvent>>> {
         let command = crate::format_slash_command(command, args)?;
         self.stream_prompt(command, PromptOptions::default()).await
+    }
+
+    /// Return effective subagents, including inline and enabled extension agents.
+    pub async fn supported_agents(&self) -> Result<Vec<crate::AgentInfo>> {
+        let result: crate::GetSupportedAgentsResult = self
+            .request_typed("autohand.getSupportedAgents", json!({}))
+            .await?;
+        Ok(result.agents)
     }
 
     pub async fn supported_commands(&self) -> Result<Vec<String>> {
@@ -824,6 +824,77 @@ impl AutohandSdk {
     /// Enables or disables automatic context compaction.
     pub async fn set_context_compact(&self, enabled: bool) -> Result<crate::ContextCompactResult> {
         self.request_typed("autohand.setContextCompact", json!({ "enabled": enabled }))
+            .await
+    }
+
+    /// Negotiates browser tools with the CLI's browser bridge.
+    pub async fn set_browser_capabilities(
+        &self,
+        protocol_version: u32,
+        extension_version: impl Into<String>,
+        tools: Vec<String>,
+    ) -> Result<Value> {
+        self.request("autohand.browserCapabilities.set", json!({"protocolVersion":protocol_version,"extensionVersion":extension_version.into(),"tools":tools})).await
+    }
+
+    /// Sets the thinking budget, or resets it with `None`.
+    pub async fn set_max_thinking_tokens(&self, max_thinking_tokens: Option<u64>) -> Result<Value> {
+        self.request(
+            "autohand.maxThinkingTokensSet",
+            json!({"maxThinkingTokens":max_thinking_tokens}),
+        )
+        .await
+    }
+
+    pub async fn apply_flag_settings(&self, settings: Value) -> Result<Value> {
+        if !settings.is_object() {
+            return Err(Error::InvalidInput("settings must be an object".into()));
+        }
+        self.request("autohand.applyFlagSettings", json!({"settings":settings}))
+            .await
+    }
+
+    pub async fn get_supported_models(&self) -> Result<Value> {
+        self.request("autohand.getSupportedModels", json!({})).await
+    }
+
+    pub async fn get_context_usage(&self) -> Result<Value> {
+        self.request("autohand.getContextUsage", json!({})).await
+    }
+
+    pub async fn reload_plugins(&self) -> Result<Value> {
+        self.request("autohand.reloadPlugins", json!({})).await
+    }
+
+    pub async fn get_account_info(&self) -> Result<Value> {
+        self.request("autohand.getAccountInfo", json!({})).await
+    }
+
+    pub async fn toggle_mcp_server(
+        &self,
+        server_name: impl Into<String>,
+        enabled: bool,
+    ) -> Result<Value> {
+        self.request(
+            "autohand.mcp.toggleServer",
+            json!({"serverName":server_name.into(),"enabled":enabled}),
+        )
+        .await
+    }
+
+    pub async fn reconnect_mcp_server(&self, server_name: impl Into<String>) -> Result<Value> {
+        self.request(
+            "autohand.mcp.reconnectServer",
+            json!({"serverName":server_name.into()}),
+        )
+        .await
+    }
+
+    pub async fn set_mcp_servers(&self, servers: Value) -> Result<Value> {
+        if !servers.is_object() {
+            return Err(Error::InvalidInput("servers must be an object".into()));
+        }
+        self.request("autohand.mcp.setServers", json!({"servers":servers}))
             .await
     }
 
