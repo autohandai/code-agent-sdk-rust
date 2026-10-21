@@ -380,7 +380,7 @@ impl Config {
         push_flag(&mut args, self.unrestricted, "--unrestricted");
         push_flag(&mut args, self.auto_mode, "--auto-mode");
         push_flag(&mut args, self.auto_skill, "--auto-skill");
-        push_flag(&mut args, self.auto_commit, "-c");
+        push_flag(&mut args, self.auto_commit, "--auto-commit");
         if self.idle_logout == Some(false) {
             args.push("--no-idle-logout".into());
         }
@@ -1367,5 +1367,21 @@ mod ephemeral_configuration_tests {
             ..Config::default()
         };
         assert!(config.cli_args().iter().any(|arg| arg == "--ephemeral"));
+    }
+}
+
+#[cfg(test)]
+mod continue_flag_tests {
+    use super::Config;
+    #[test]
+    fn auto_commit_uses_long_flag() {
+        let config = Config {
+            auto_commit: true,
+            ..Config::default()
+        };
+        let args = config.cli_args();
+        assert!(args.iter().any(|arg| arg == "--auto-commit"));
+        assert!(!args.iter().any(|arg| arg == "-c"));
+        assert!(config.validate().is_ok());
     }
 }
