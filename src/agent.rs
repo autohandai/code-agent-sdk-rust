@@ -332,6 +332,196 @@ impl Agent {
         self.sdk.prune_autoresearch(params).await
     }
 
+    pub async fn supported_agents(&self) -> Result<Vec<crate::AgentInfo>> {
+        self.sdk.supported_agents().await
+    }
+
+    pub async fn supported_commands(&self) -> Result<Vec<String>> {
+        self.sdk.supported_commands().await
+    }
+
+    pub async fn supports_command(&self, command: &str) -> Result<bool> {
+        self.sdk.supports_command(command).await
+    }
+
+    pub async fn set_permission_mode(&self, mode: impl Into<String>) -> Result<Value> {
+        self.sdk.set_permission_mode(mode).await
+    }
+
+    pub async fn set_model(&self, model: impl Into<String>) -> Result<Value> {
+        self.sdk.set_model(model).await
+    }
+
+    pub async fn get_state(&self) -> Result<Value> {
+        self.sdk.get_state().await
+    }
+
+    pub async fn get_messages(&self) -> Result<Value> {
+        self.sdk.get_messages().await
+    }
+
+    pub async fn permission_response(
+        &self,
+        request_id: impl Into<String>,
+        decision: impl Into<String>,
+    ) -> Result<Value> {
+        self.sdk.permission_response(request_id, decision).await
+    }
+
+    pub async fn acknowledge_permission(
+        &self,
+        request_id: impl Into<String>,
+    ) -> Result<crate::PermissionAcknowledgedResult> {
+        self.sdk.acknowledge_permission(request_id).await
+    }
+
+    pub async fn respond_to_directory_access(
+        &self,
+        request_id: impl Into<String>,
+        granted: bool,
+    ) -> Result<crate::DirectoryAccessResponseResult> {
+        self.sdk
+            .respond_to_directory_access(request_id, granted)
+            .await
+    }
+
+    pub async fn acknowledge_directory_access(
+        &self,
+        request_id: impl Into<String>,
+    ) -> Result<crate::DirectoryAccessAcknowledgedResult> {
+        self.sdk.acknowledge_directory_access(request_id).await
+    }
+
+    pub async fn decide_changes(
+        &self,
+        params: crate::ChangesDecisionParams,
+    ) -> Result<crate::ChangesDecisionResult> {
+        self.sdk.decide_changes(params).await
+    }
+
+    pub async fn get_history(
+        &self,
+        params: crate::GetHistoryParams,
+    ) -> Result<crate::GetHistoryResult> {
+        self.sdk.get_history(params).await
+    }
+
+    pub async fn get_session(
+        &self,
+        session_id: impl Into<String>,
+    ) -> Result<crate::SessionLookupResult> {
+        self.sdk.get_session(session_id).await
+    }
+
+    pub async fn attach_session(
+        &self,
+        session_id: impl Into<String>,
+    ) -> Result<crate::SessionAttachResult> {
+        self.sdk.attach_session(session_id).await
+    }
+
+    pub async fn set_yolo(&self, params: crate::YoloSetParams) -> Result<crate::YoloSetResult> {
+        self.sdk.set_yolo(params).await
+    }
+
+    pub async fn set_yolo_alias(
+        &self,
+        params: crate::YoloSetParams,
+    ) -> Result<crate::YoloSetResult> {
+        self.sdk.set_yolo_alias(params).await
+    }
+
+    pub async fn set_vscode_mcp_tools(
+        &self,
+        params: crate::McpSetVsCodeToolsParams,
+    ) -> Result<crate::McpSetVsCodeToolsResult> {
+        self.sdk.set_vscode_mcp_tools(params).await
+    }
+
+    pub async fn respond_to_mcp_invocation(
+        &self,
+        params: crate::McpInvocationResponseParams,
+    ) -> Result<crate::McpInvocationResponseResult> {
+        self.sdk.respond_to_mcp_invocation(params).await
+    }
+
+    pub async fn recommend_project_learning(
+        &self,
+        params: crate::LearnRecommendParams,
+    ) -> Result<crate::LearnRecommendResult> {
+        self.sdk.recommend_project_learning(params).await
+    }
+
+    pub async fn update_project_learning(&self) -> Result<crate::LearnUpdateResult> {
+        self.sdk.update_project_learning().await
+    }
+
+    pub async fn generate_project_skill(
+        &self,
+        params: crate::LearnGenerateParams,
+    ) -> Result<crate::LearnGenerateResult> {
+        self.sdk.generate_project_skill(params).await
+    }
+
+    pub async fn get_tools_registry(&self) -> Result<crate::GetToolsRegistryResult> {
+        self.sdk.get_tools_registry().await
+    }
+
+    pub async fn set_context_compact(&self, enabled: bool) -> Result<crate::ContextCompactResult> {
+        self.sdk.set_context_compact(enabled).await
+    }
+
+    pub async fn set_browser_capabilities(
+        &self,
+        protocol_version: u32,
+        extension_version: impl Into<String>,
+        tools: Vec<String>,
+    ) -> Result<Value> {
+        self.sdk
+            .set_browser_capabilities(protocol_version, extension_version, tools)
+            .await
+    }
+
+    pub async fn set_max_thinking_tokens(&self, max_thinking_tokens: Option<u64>) -> Result<Value> {
+        self.sdk.set_max_thinking_tokens(max_thinking_tokens).await
+    }
+
+    pub async fn apply_flag_settings(&self, settings: Value) -> Result<Value> {
+        self.sdk.apply_flag_settings(settings).await
+    }
+
+    pub async fn get_supported_models(&self) -> Result<Value> {
+        self.sdk.get_supported_models().await
+    }
+
+    pub async fn get_context_usage(&self) -> Result<Value> {
+        self.sdk.get_context_usage().await
+    }
+
+    pub async fn reload_plugins(&self) -> Result<Value> {
+        self.sdk.reload_plugins().await
+    }
+
+    pub async fn get_account_info(&self) -> Result<Value> {
+        self.sdk.get_account_info().await
+    }
+
+    pub async fn toggle_mcp_server(
+        &self,
+        server_name: impl Into<String>,
+        enabled: bool,
+    ) -> Result<Value> {
+        self.sdk.toggle_mcp_server(server_name, enabled).await
+    }
+
+    pub async fn reconnect_mcp_server(&self, server_name: impl Into<String>) -> Result<Value> {
+        self.sdk.reconnect_mcp_server(server_name).await
+    }
+
+    pub async fn set_mcp_servers(&self, servers: Value) -> Result<Value> {
+        self.sdk.set_mcp_servers(servers).await
+    }
+
     pub async fn close(&mut self) -> Result<()> {
         self.sdk.stop().await
     }

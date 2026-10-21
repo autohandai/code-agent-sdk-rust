@@ -12,6 +12,7 @@ mod error;
 mod event;
 mod goal;
 mod json_output;
+mod notifications;
 mod step_control;
 mod transport;
 
@@ -29,9 +30,10 @@ pub use conversation::*;
 pub use current_cli::*;
 pub use discovery::*;
 pub use error::{Error, Result};
-pub use event::{SdkEvent, TokenUsageStatus, TurnEndUsage};
+pub use event::{NotificationKind, SdkEvent, TokenUsageStatus, TurnEndUsage};
 pub use goal::*;
 pub use json_output::{parse_json_text, StructuredOutputError};
+pub use notifications::*;
 pub use step_control::{
     has_tool_call, is_step_count, AgentStep, AgentStepToolCall, AgentStepToolResult, StepEndEvent,
     StopCondition, StopConditionContext,
