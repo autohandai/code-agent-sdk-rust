@@ -325,3 +325,7 @@ for the full security and lifecycle contract.
 - SDK docs: https://autohand.ai/docs/agent-sdk/
 - Issues: https://github.com/autohandai/code-agent-sdk-rust/issues
 - Security reports: security@autohand.ai
+
+## License
+
+Apache License 2.0 - Free for individuals, non-profits, educational institutions, open source projects, and companies with ARR under $5M. See [LICENSE](LICENSE) and [COMMERCIAL.md](COMMERCIAL.md) for details.
