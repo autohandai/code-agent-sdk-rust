@@ -328,4 +328,4 @@ for the full security and lifecycle contract.
 
 ## License
 
-Apache License 2.0 - Free for individuals, non-profits, educational institutions, open source projects, and companies with ARR under $5M. See [LICENSE](LICENSE) and [COMMERCIAL.md](COMMERCIAL.md) for details.
+Apache License 2.0. See [LICENSE](LICENSE).
